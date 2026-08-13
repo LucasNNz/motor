@@ -3,6 +3,8 @@ from __future__ import annotations
 import base64
 import io
 import json
+import platform
+import subprocess
 import threading
 import time
 import uuid
@@ -14,25 +16,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-try:
-    from .backend import build_backend
-    from .models import BatchItem, BatchStartRequest, BatchStatus, GenerateRequest
-    from .utils import build_zip, parse_prompt_lines
-except ImportError:  # allows `uvicorn server:app` from inside engine/
-    from backend import build_backend
-    from models import BatchItem, BatchStartRequest, BatchStatus, GenerateRequest
-    from utils import build_zip, parse_prompt_lines
+from .backend import build_backend
+from .composer_engine import composer_engine
+from .models import BatchItem, BatchStartRequest, BatchStatus, GenerateRequest
+from .sdcpp_manager import manager as sdcpp_manager
+from .utils import build_zip, parse_prompt_lines
 
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
-import os
-
-# Vercel Functions have an ephemeral writable /tmp. Local runs keep outputs in the project.
-OUTPUTS_DIR = Path("/tmp/image_motor_outputs") if os.environ.get("VERCEL") else (PROJECT_DIR / "outputs")
+OUTPUTS_DIR = PROJECT_DIR / "outputs"
 STATIC_DIR = BASE_DIR / "static"
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+STATIC_DIR.mkdir(parents=True, exist_ok=True)
 
-app = FastAPI(title="Image Motor MVP", version="0.2.0")
+app = FastAPI(title="Image Motor MVP", version="0.4.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -52,46 +49,58 @@ def image_to_base64_png(image) -> str:
     return base64.b64encode(buffer.getvalue()).decode("utf-8")
 
 
+def _windows_gpu_names() -> list[str]:
+    if platform.system().lower() != "windows":
+        return []
+    command = [
+        "powershell",
+        "-NoProfile",
+        "-Command",
+        "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name",
+    ]
+    try:
+        proc = subprocess.run(command, capture_output=True, text=True, timeout=5)
+        if proc.returncode == 0:
+            return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+    except Exception:
+        pass
+    return []
+
+
 def get_system_info():
     info = {
+        "os": platform.platform(),
+        "machine": platform.machine(),
+        "processor": platform.processor(),
+        "gpu_names": _windows_gpu_names(),
         "torch_installed": False,
         "cuda_available": False,
-        "cuda_device_count": 0,
-        "cuda_device_name": None,
-        "mps_available": False,
-        "recommended_backend": "mock",
-        "notes": [],
+        "diffusers_installed": False,
+        "recommended_backend": "composer",
+        "notes": [
+            "CUDA não é obrigatório. O backend recomendado agora é o Composer Engine; geração pesada fica como refinador opcional futuro."
+        ],
     }
     try:
         import torch
         info["torch_installed"] = True
         info["cuda_available"] = bool(torch.cuda.is_available())
-        if info["cuda_available"]:
-            info["cuda_device_count"] = torch.cuda.device_count()
-            info["cuda_device_name"] = torch.cuda.get_device_name(0)
-            info["recommended_backend"] = "diffusers"
-        try:
-            info["mps_available"] = bool(getattr(torch.backends, "mps", None) and torch.backends.mps.is_available())
-        except Exception:
-            info["mps_available"] = False
-        if not info["cuda_available"]:
-            info["notes"].append("CUDA não detectada neste ambiente. Um backend local real provavelmente dependerá de GPU no PC alvo.")
     except Exception:
-        info["notes"].append("PyTorch não detectado corretamente.")
+        pass
 
     try:
         import diffusers  # noqa: F401
         info["diffusers_installed"] = True
     except Exception:
-        info["diffusers_installed"] = False
-        info["notes"].append("'diffusers' ainda não está disponível neste ambiente.")
+        pass
 
+    info["sdcpp"] = sdcpp_manager.status()
     return info
 
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "jobs": len(jobs)}
+    return {"ok": True, "jobs": len(jobs), "version": "0.4.0"}
 
 
 @app.get("/api/system")
@@ -99,25 +108,75 @@ def system_info():
     return get_system_info()
 
 
+@app.get("/api/composer/status")
+def composer_status():
+    return composer_engine.status()
+
+
+@app.post("/api/composer/rebuild-demo")
+def composer_rebuild_demo():
+    try:
+        return composer_engine.rebuild_demo_bank()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/engine/status")
+def engine_status():
+    return sdcpp_manager.status()
+
+
+@app.post("/api/engine/start")
+def engine_start():
+    try:
+        return sdcpp_manager.start()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/engine/stop")
+def engine_stop():
+    try:
+        return sdcpp_manager.stop()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @app.post("/api/generate")
 def generate(req: GenerateRequest):
-    backend = build_backend(req.backend, req.engine_url)
-    started = time.perf_counter()
-    image = backend.generate(req.prompt, req.width, req.height, req.seed, req.steps)
-    elapsed_ms = int((time.perf_counter() - started) * 1000)
-    return {
-        "backend": backend.name,
-        "duration_ms": elapsed_ms,
-        "image_base64": image_to_base64_png(image),
-    }
-
+    try:
+        backend = build_backend(req.backend, req.engine_url)
+        started = time.perf_counter()
+        image = backend.generate(req.prompt, req.width, req.height, req.seed, req.steps)
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        return {
+            "backend": backend.name,
+            "duration_ms": elapsed_ms,
+            "image_base64": image_to_base64_png(image),
+            "composition": getattr(backend, "last_info", None),
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 def run_batch(job_id: str):
     with job_lock:
         status = jobs[job_id]
         status.status = "running"
-    backend = build_backend(status.backend, status.engine_url)
+
+    try:
+        backend = build_backend(status.backend, status.engine_url)
+    except Exception as exc:
+        status.status = "error"
+        status.failed = len(status.items)
+        for item in status.items:
+            item.status = "error"
+            item.error = str(exc)
+        status.finished_at = time.time()
+        return
+
     job_dir = OUTPUTS_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
 
@@ -136,6 +195,7 @@ def run_batch(job_id: str):
             image.save(output_path, format="PNG")
             item.output_file = filename
             item.duration_ms = elapsed_ms
+            item.composition = getattr(backend, "last_info", None)
             item.status = "done"
         except Exception as exc:
             item.status = "error"
@@ -172,7 +232,7 @@ def run_batch(job_id: str):
 def start_batch(req: BatchStartRequest):
     entries = parse_prompt_lines(req.text)
     if not entries:
-        raise HTTPException(status_code=400, detail="No prompts found in the provided text.")
+        raise HTTPException(status_code=400, detail="Nenhum prompt encontrado no texto.")
 
     job_id = uuid.uuid4().hex[:10]
     items = [BatchItem(id=item_id, prompt=prompt) for item_id, prompt in entries]
@@ -203,14 +263,14 @@ def start_batch(req: BatchStartRequest):
 def get_batch_status(job_id: str):
     status = jobs.get(job_id)
     if not status:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise HTTPException(status_code=404, detail="Job não encontrado")
     return status.model_dump()
 
 
 @app.post("/api/batch/{job_id}/cancel")
 def cancel_batch(job_id: str):
     if job_id not in jobs:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise HTTPException(status_code=404, detail="Job não encontrado")
     job_cancel_flags[job_id] = True
     return {"ok": True, "job_id": job_id}
 
@@ -220,7 +280,7 @@ def download_zip(job_id: str):
     job_dir = OUTPUTS_DIR / job_id
     zip_path = job_dir / f"{job_id}.zip"
     if not zip_path.exists():
-        raise HTTPException(status_code=404, detail="ZIP not ready")
+        raise HTTPException(status_code=404, detail="ZIP ainda não está pronto")
     return FileResponse(zip_path, filename=zip_path.name, media_type="application/zip")
 
 
@@ -228,7 +288,7 @@ def download_zip(job_id: str):
 def get_image(job_id: str, filename: str):
     path = OUTPUTS_DIR / job_id / filename
     if not path.exists():
-        raise HTTPException(status_code=404, detail="Image not found")
+        raise HTTPException(status_code=404, detail="Imagem não encontrada")
     return FileResponse(path, media_type="image/png")
 
 

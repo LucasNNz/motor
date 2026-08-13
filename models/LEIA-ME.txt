@@ -1,0 +1,6 @@
+Esta pasta recebe o modelo local.
+
+O setup padrão baixa:
+  sd_turbo.safetensors
+
+O arquivo é grande (~5,2 GB) e não vem dentro do ZIP do projeto.

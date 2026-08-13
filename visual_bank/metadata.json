@@ -1,0 +1,532 @@
+{
+  "version": "0.1",
+  "description": "Banco visual manual inicial do Composer Engine. Assets demo substituíveis por PNGs reais mantendo os metadados.",
+  "canvas_base": [
+    512,
+    512
+  ],
+  "assets": [
+    {
+      "id": "bg_plain_light",
+      "category": "background",
+      "file": "assets/backgrounds/plain_light.png",
+      "tags": [
+        "claro",
+        "simples",
+        "quiz",
+        "fundo claro"
+      ],
+      "style": [
+        "2d",
+        "limpo"
+      ],
+      "free_space": "center"
+    },
+    {
+      "id": "bg_forest_day",
+      "category": "background",
+      "file": "assets/backgrounds/forest_day.png",
+      "tags": [
+        "floresta",
+        "mata",
+        "árvores",
+        "dia"
+      ],
+      "style": [
+        "2d",
+        "limpo"
+      ],
+      "free_space": "right"
+    },
+    {
+      "id": "bg_kitchen",
+      "category": "background",
+      "file": "assets/backgrounds/kitchen.png",
+      "tags": [
+        "cozinha",
+        "casa",
+        "comida"
+      ],
+      "style": [
+        "2d",
+        "limpo"
+      ],
+      "free_space": "center"
+    },
+    {
+      "id": "bg_bedroom",
+      "category": "background",
+      "file": "assets/backgrounds/bedroom.png",
+      "tags": [
+        "quarto",
+        "cama",
+        "casa"
+      ],
+      "style": [
+        "2d",
+        "limpo"
+      ],
+      "free_space": "center"
+    },
+    {
+      "id": "bg_school",
+      "category": "background",
+      "file": "assets/backgrounds/school.png",
+      "tags": [
+        "escola",
+        "sala de aula",
+        "quadro"
+      ],
+      "style": [
+        "2d",
+        "limpo"
+      ],
+      "free_space": "right"
+    },
+    {
+      "id": "bg_city",
+      "category": "background",
+      "file": "assets/backgrounds/city.png",
+      "tags": [
+        "cidade",
+        "rua",
+        "prédios"
+      ],
+      "style": [
+        "2d",
+        "limpo"
+      ],
+      "free_space": "center"
+    },
+    {
+      "id": "bg_playground",
+      "category": "background",
+      "file": "assets/backgrounds/playground.png",
+      "tags": [
+        "parque",
+        "playground",
+        "brinquedos"
+      ],
+      "style": [
+        "2d",
+        "limpo"
+      ],
+      "free_space": "center"
+    },
+    {
+      "id": "bg_sports_field",
+      "category": "background",
+      "file": "assets/backgrounds/sports_field.png",
+      "tags": [
+        "esporte",
+        "campo",
+        "futebol"
+      ],
+      "style": [
+        "2d",
+        "limpo"
+      ],
+      "free_space": "center"
+    },
+    {
+      "id": "bg_beach",
+      "category": "background",
+      "file": "assets/backgrounds/beach.png",
+      "tags": [
+        "praia",
+        "mar",
+        "areia"
+      ],
+      "style": [
+        "2d",
+        "limpo"
+      ],
+      "free_space": "center"
+    },
+    {
+      "id": "bg_space",
+      "category": "background",
+      "file": "assets/backgrounds/space.png",
+      "tags": [
+        "espaço",
+        "planeta",
+        "estrelas"
+      ],
+      "style": [
+        "2d",
+        "limpo"
+      ],
+      "free_space": "center"
+    },
+    {
+      "id": "pose_pointing_right",
+      "category": "pose",
+      "file": "assets/poses/pointing_right.png",
+      "tags": [
+        "apontando",
+        "aponta",
+        "indicando",
+        "direita"
+      ],
+      "anchors": {
+        "head": [
+          150,
+          92,
+          118,
+          118
+        ],
+        "object_target": [
+          350,
+          280,
+          135,
+          135
+        ],
+        "character_box": [
+          110,
+          85,
+          250,
+          370
+        ]
+      },
+      "layer": 20
+    },
+    {
+      "id": "pose_standing_center",
+      "category": "pose",
+      "file": "assets/poses/standing_center.png",
+      "tags": [
+        "em pé",
+        "parado",
+        "frente",
+        "central"
+      ],
+      "anchors": {
+        "head": [
+          197,
+          82,
+          118,
+          118
+        ],
+        "object_target": [
+          330,
+          280,
+          140,
+          140
+        ],
+        "character_box": [
+          165,
+          80,
+          180,
+          365
+        ]
+      },
+      "layer": 20
+    },
+    {
+      "id": "pose_holding_left",
+      "category": "pose",
+      "file": "assets/poses/holding_left.png",
+      "tags": [
+        "segurando",
+        "segura",
+        "carregando"
+      ],
+      "anchors": {
+        "head": [
+          257,
+          85,
+          118,
+          118
+        ],
+        "object_target": [
+          215,
+          265,
+          120,
+          120
+        ],
+        "character_box": [
+          205,
+          85,
+          195,
+          360
+        ]
+      },
+      "layer": 20
+    },
+    {
+      "id": "face_neutral",
+      "category": "face",
+      "file": "assets/faces/neutral.png",
+      "tags": [
+        "neutro",
+        "normal"
+      ],
+      "anchor": "head",
+      "layer": 40
+    },
+    {
+      "id": "face_happy",
+      "category": "face",
+      "file": "assets/faces/happy.png",
+      "tags": [
+        "feliz",
+        "sorrindo",
+        "alegre"
+      ],
+      "anchor": "head",
+      "layer": 40
+    },
+    {
+      "id": "face_surprised",
+      "category": "face",
+      "file": "assets/faces/surprised.png",
+      "tags": [
+        "surpreso",
+        "assustado",
+        "espantado"
+      ],
+      "anchor": "head",
+      "layer": 40
+    },
+    {
+      "id": "face_angry",
+      "category": "face",
+      "file": "assets/faces/angry.png",
+      "tags": [
+        "bravo",
+        "irritado",
+        "raiva"
+      ],
+      "anchor": "head",
+      "layer": 40
+    },
+    {
+      "id": "outfit_ninja_pointing_right",
+      "category": "outfit",
+      "file": "assets/outfits/ninja_pointing_right.png",
+      "tags": [
+        "ninja",
+        "shinobi",
+        "preto",
+        "pointing_right"
+      ],
+      "compatible_pose": "pose_pointing_right",
+      "layer": 30
+    },
+    {
+      "id": "outfit_chef_pointing_right",
+      "category": "outfit",
+      "file": "assets/outfits/chef_pointing_right.png",
+      "tags": [
+        "chef",
+        "cozinheiro",
+        "cozinha",
+        "pointing_right"
+      ],
+      "compatible_pose": "pose_pointing_right",
+      "layer": 30
+    },
+    {
+      "id": "outfit_casual_pointing_right",
+      "category": "outfit",
+      "file": "assets/outfits/casual_pointing_right.png",
+      "tags": [
+        "casual",
+        "camiseta",
+        "roupa comum",
+        "pointing_right"
+      ],
+      "compatible_pose": "pose_pointing_right",
+      "layer": 30
+    },
+    {
+      "id": "outfit_ninja_standing_center",
+      "category": "outfit",
+      "file": "assets/outfits/ninja_standing_center.png",
+      "tags": [
+        "ninja",
+        "shinobi",
+        "preto",
+        "standing_center"
+      ],
+      "compatible_pose": "pose_standing_center",
+      "layer": 30
+    },
+    {
+      "id": "outfit_chef_standing_center",
+      "category": "outfit",
+      "file": "assets/outfits/chef_standing_center.png",
+      "tags": [
+        "chef",
+        "cozinheiro",
+        "cozinha",
+        "standing_center"
+      ],
+      "compatible_pose": "pose_standing_center",
+      "layer": 30
+    },
+    {
+      "id": "outfit_casual_standing_center",
+      "category": "outfit",
+      "file": "assets/outfits/casual_standing_center.png",
+      "tags": [
+        "casual",
+        "camiseta",
+        "roupa comum",
+        "standing_center"
+      ],
+      "compatible_pose": "pose_standing_center",
+      "layer": 30
+    },
+    {
+      "id": "outfit_ninja_holding_left",
+      "category": "outfit",
+      "file": "assets/outfits/ninja_holding_left.png",
+      "tags": [
+        "ninja",
+        "shinobi",
+        "preto",
+        "holding_left"
+      ],
+      "compatible_pose": "pose_holding_left",
+      "layer": 30
+    },
+    {
+      "id": "outfit_chef_holding_left",
+      "category": "outfit",
+      "file": "assets/outfits/chef_holding_left.png",
+      "tags": [
+        "chef",
+        "cozinheiro",
+        "cozinha",
+        "holding_left"
+      ],
+      "compatible_pose": "pose_holding_left",
+      "layer": 30
+    },
+    {
+      "id": "outfit_casual_holding_left",
+      "category": "outfit",
+      "file": "assets/outfits/casual_holding_left.png",
+      "tags": [
+        "casual",
+        "camiseta",
+        "roupa comum",
+        "holding_left"
+      ],
+      "compatible_pose": "pose_holding_left",
+      "layer": 30
+    },
+    {
+      "id": "obj_fork",
+      "category": "object",
+      "file": "assets/objects/fork.png",
+      "tags": [
+        "garfo",
+        "comer",
+        "talher"
+      ],
+      "layer": 50
+    },
+    {
+      "id": "obj_spoon",
+      "category": "object",
+      "file": "assets/objects/spoon.png",
+      "tags": [
+        "colher",
+        "comer",
+        "talher"
+      ],
+      "layer": 50
+    },
+    {
+      "id": "obj_knife",
+      "category": "object",
+      "file": "assets/objects/knife.png",
+      "tags": [
+        "faca",
+        "cortar",
+        "talher"
+      ],
+      "layer": 50
+    },
+    {
+      "id": "obj_box",
+      "category": "object",
+      "file": "assets/objects/box.png",
+      "tags": [
+        "caixa",
+        "pacote"
+      ],
+      "layer": 50
+    },
+    {
+      "id": "obj_ball",
+      "category": "object",
+      "file": "assets/objects/ball.png",
+      "tags": [
+        "bola",
+        "futebol",
+        "esporte"
+      ],
+      "layer": 50
+    },
+    {
+      "id": "obj_apple",
+      "category": "object",
+      "file": "assets/objects/apple.png",
+      "tags": [
+        "maçã",
+        "maca",
+        "fruta",
+        "alimento"
+      ],
+      "layer": 50
+    },
+    {
+      "id": "obj_car",
+      "category": "object",
+      "file": "assets/objects/car.png",
+      "tags": [
+        "carro",
+        "veículo",
+        "veiculo"
+      ],
+      "layer": 50
+    },
+    {
+      "id": "obj_book",
+      "category": "object",
+      "file": "assets/objects/book.png",
+      "tags": [
+        "livro",
+        "escola",
+        "leitura"
+      ],
+      "layer": 50
+    },
+    {
+      "id": "obj_toy",
+      "category": "object",
+      "file": "assets/objects/toy.png",
+      "tags": [
+        "brinquedo",
+        "carrinho",
+        "brincar"
+      ],
+      "layer": 50
+    },
+    {
+      "id": "obj_banana",
+      "category": "object",
+      "file": "assets/objects/banana.png",
+      "tags": [
+        "banana",
+        "fruta",
+        "alimento"
+      ],
+      "layer": 50
+    }
+  ],
+  "license_notes": "Assets demo gerados proceduralmente pelo próprio MVP. Para assets externos, registrar origem/licença nos metadados."
+}

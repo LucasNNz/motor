@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+outputs/*
+!outputs/.gitkeep
+runtime/_download/
+runtime/sdcpp/*
+!runtime/sdcpp/LEIA-ME.txt
+models/*
+!models/LEIA-ME.txt

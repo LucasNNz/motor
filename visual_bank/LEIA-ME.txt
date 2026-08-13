@@ -1,0 +1,34 @@
+CORVO IMAGE ENGINE — BANCO VISUAL
+
+Esta pasta é a memória visual local do Composer Engine.
+
+ESTRUTURA ATUAL
+- assets/backgrounds/  -> fundos
+- assets/poses/        -> poses transparentes em canvas-base 512x512
+- assets/faces/        -> rostos/expressões transparentes
+- assets/outfits/      -> roupas compatíveis com determinadas poses
+- assets/objects/      -> objetos transparentes
+- metadata.json        -> tags, compatibilidades, âncoras e metadados
+
+IMPORTANTE
+Os assets atuais são DEMO gerados proceduralmente pelo próprio MVP para provar a arquitetura.
+A qualidade final dependerá de substituir/expandir este banco por assets visuais melhores.
+
+PARA ASSETS EXTERNOS
+Registrar, sempre que aplicável:
+- source_url
+- source_name
+- license
+- license_url
+- author
+- collected_at
+- notes
+
+O fato de o motor ser local não elimina obrigações de direitos autorais/licença.
+
+PRÓXIMOS PASSOS
+1. testar o Composer com o banco demo;
+2. substituir grupos de assets por ilustrações melhores;
+3. adicionar importador/indexador de novos PNGs;
+4. adicionar coleta automática apenas depois da prova de conceito;
+5. adicionar refinador leve sem CUDA apenas se a composição precisar.

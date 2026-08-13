@@ -3,38 +3,63 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Image Motor MVP</title>
+  <title>Corvo Image Engine</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
       <div>
-        <h1>Image Motor MVP</h1>
-        <p>Teste inicial do gerador separado, inspirado na lógica de lote do Forma.</p>
+        <h1>Corvo Image Engine <span class="version">V0.4 · COMPOSER</span></h1>
+        <p>Memória visual + composição automática · sem CUDA obrigatório · geração em lote por TXT.</p>
       </div>
-      <div>
+      <div class="top-status">
         <div id="healthBadge" class="badge">Conectando...</div>
         <div id="systemBadge" class="sub-badge"></div>
       </div>
     </header>
 
+    <section class="panel composer-panel">
+      <div class="engine-head">
+        <div>
+          <h2>Composer Engine</h2>
+          <p class="muted">O MVP não cria todos os pixels do zero. Ele interpreta o prompt, procura componentes no banco visual e monta a composição.</p>
+        </div>
+        <div class="actions compact">
+          <button id="refreshComposerBtn" class="ghost">Atualizar banco</button>
+          <button id="rebuildComposerBtn" class="ghost">Recriar banco demo</button>
+        </div>
+      </div>
+      <div class="engine-status-grid">
+        <div class="status-card"><span>Motor</span><strong class="ok">COMPOSER</strong></div>
+        <div class="status-card"><span>Assets</span><strong id="bankAssets">Verificando...</strong></div>
+        <div class="status-card"><span>Banco</span><strong id="bankBreakdown">-</strong></div>
+        <div class="status-card"><span>Refinador</span><strong class="warn">DESLIGADO</strong></div>
+      </div>
+      <div id="composerMessage" class="meta"></div>
+      <div class="setup-note">
+        <strong>Direção atual:</strong> o Composer funciona apenas com CPU/Pillow e banco local. Os backends generativos antigos continuam disponíveis como experimentais, mas não são o motor principal. O banco demo pode ser substituído gradualmente por PNGs reais com metadados de origem/licença.
+      </div>
+    </section>
+
     <main class="grid">
       <section class="panel">
         <h2>Geração única</h2>
         <label>Prompt</label>
-        <textarea id="singlePrompt" rows="6" placeholder="Descreva a imagem..."></textarea>
-        <div class="inline-fields">
+        <textarea id="singlePrompt" rows="6" placeholder="Descreva a imagem...">UM GARFO COMO ELEMENTO PRINCIPAL, CENTRALIZADO, BEM DESTACADO, ESTILO ILUSTRAÇÃO 2D SEMIRREALISTA E LIMPA, FUNDO CLARO E SIMPLES, COMPOSIÇÃO OBJETIVA E FÁCIL DE ENTENDER, BOA LEITURA VISUAL PARA QUIZ, IMAGEM LIMPA, SEM TÍTULO, SEM TEXTO, SEM LOGOS E SEM MARCA-D'ÁGUA.</textarea>
+        <div class="inline-fields single-config">
           <div>
             <label>Backend</label>
             <select id="singleBackend">
-              <option value="mock">mock</option>
-              <option value="automatic1111">automatic1111</option>
-              <option value="diffusers">diffusers</option>
+              <option value="composer" selected>COMPOSER ENGINE</option>
+              <option value="sdcpp_local">SD.CPP · EXPERIMENTAL</option>
+              <option value="diffusers_cpu">DIFFUSERS CPU · EXPERIMENTAL</option>
+              <option value="automatic1111">AUTOMATIC1111</option>
+              <option value="mock">MOCK</option>
             </select>
           </div>
-          <div>
-            <label>Engine URL (opcional)</label>
+          <div class="a1111-only">
+            <label>Engine URL (somente A1111)</label>
             <input id="singleEngineUrl" type="text" value="http://127.0.0.1:7860" />
           </div>
           <div>
@@ -45,33 +70,43 @@
             <label>Altura</label>
             <input id="singleHeight" type="number" value="768" min="256" step="64" />
           </div>
-          <div>
-            <label>Steps</label>
-            <input id="singleSteps" type="number" value="4" min="1" max="50" />
+          <div class="generative-only">
+            <label>Steps (só gerativo)</label>
+            <input id="singleSteps" type="number" value="1" min="1" max="50" />
           </div>
         </div>
         <div class="actions">
-          <button id="generateOneBtn">Gerar imagem</button>
+          <button id="generateOneBtn">Compor imagem</button>
         </div>
         <div id="singleMeta" class="meta"></div>
+        <div id="singlePlan" class="plan-box empty">O plano de composição aparecerá aqui.</div>
         <div class="preview-box"><img id="singlePreview" alt="Preview" /></div>
       </section>
 
       <section class="panel">
         <h2>Lote por TXT</h2>
-        <label>Prompts (uma linha por item ou ID|prompt)</label>
-        <textarea id="batchText" rows="12" placeholder="001|UM GARFO CENTRALIZADO, ILUSTRAÇÃO 2D\n002|UMA COLHER CENTRALIZADA, ILUSTRAÇÃO 2D"></textarea>
-        <div class="inline-fields">
+        <div class="batch-file-row">
+          <div>
+            <label>Importar TXT</label>
+            <input id="batchFile" type="file" accept=".txt,text/plain" />
+          </div>
+          <div class="file-info" id="batchFileInfo">Ou cole os prompts abaixo.</div>
+        </div>
+        <label>Prompts — uma linha por item ou <code>ID|PROMPT</code></label>
+        <textarea id="batchText" rows="10" placeholder="001|UM GARFO CENTRALIZADO, FUNDO CLARO, SEM TEXTO\n002|UM MENINO NINJA SURPRESO APONTANDO PARA UMA CAIXA EM UMA FLORESTA"></textarea>
+        <div class="inline-fields batch-config">
           <div>
             <label>Backend</label>
             <select id="batchBackend">
-              <option value="mock">mock</option>
-              <option value="automatic1111">automatic1111</option>
-              <option value="diffusers">diffusers</option>
+              <option value="composer" selected>COMPOSER ENGINE</option>
+              <option value="sdcpp_local">SD.CPP · EXPERIMENTAL</option>
+              <option value="diffusers_cpu">DIFFUSERS CPU · EXPERIMENTAL</option>
+              <option value="automatic1111">AUTOMATIC1111</option>
+              <option value="mock">MOCK</option>
             </select>
           </div>
-          <div>
-            <label>Engine URL (opcional)</label>
+          <div class="a1111-only">
+            <label>Engine URL (somente A1111)</label>
             <input id="batchEngineUrl" type="text" value="http://127.0.0.1:7860" />
           </div>
           <div>
@@ -82,9 +117,9 @@
             <label>Altura</label>
             <input id="batchHeight" type="number" value="768" min="256" step="64" />
           </div>
-          <div>
-            <label>Steps</label>
-            <input id="batchSteps" type="number" value="4" min="1" max="50" />
+          <div class="generative-only">
+            <label>Steps (só gerativo)</label>
+            <input id="batchSteps" type="number" value="1" min="1" max="50" />
           </div>
         </div>
         <div class="actions wrap">
@@ -96,13 +131,22 @@
         <div class="queue-table-wrap">
           <table class="queue-table">
             <thead>
-              <tr><th>ID</th><th>Status</th><th>Tempo</th><th>Arquivo / Erro</th></tr>
+              <tr><th>ID</th><th>Status</th><th>Tempo</th><th>Composição</th><th>Arquivo / Erro</th></tr>
             </thead>
             <tbody id="queueBody"></tbody>
           </table>
         </div>
       </section>
     </main>
+
+    <section class="panel experimental-panel">
+      <h2>Próximas camadas</h2>
+      <div class="roadmap-grid">
+        <div><strong>MVP 1 · AGORA</strong><span>Banco manual + interpretação + composição + PNG.</span></div>
+        <div><strong>MVP 2</strong><span>Coleta automática com origem/licença + deduplicação + classificação.</span></div>
+        <div><strong>MVP 3</strong><span>Refinador leve sem CUDA para bordas, iluminação e unificação de estilo.</span></div>
+      </div>
+    </section>
   </div>
 
   <script src="/app.js"></script>

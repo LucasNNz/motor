@@ -1,0 +1,5 @@
+Esta pasta recebe automaticamente os binários do stable-diffusion.cpp.
+
+Não é necessário colocar nada aqui manualmente se você usar:
+- INSTALAR_VULKAN.bat
+- INSTALAR_CPU.bat

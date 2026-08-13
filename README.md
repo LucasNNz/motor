@@ -1,171 +1,316 @@
-# Image Motor MVP
+# Corvo Image Engine V0.4 — Composer Engine
 
-MVP inicial de um gerador separado, inspirado no fluxo client-side do Forma.
+Esta versão muda a direção do projeto. O motor principal **não é mais um gerador diffusion pesado**.
 
-## Objetivo
-Validar rapidamente a arquitetura:
+O MVP agora testa a hipótese:
 
-- interface web simples
-- motor local separado
-- geração única
-- geração em lote por TXT
-- fila visual
-- saída em PNG
-- ZIP final por lote
+```text
+PROMPT
+  ↓
+INTERPRETAÇÃO
+  ↓
+MEMÓRIA / BANCO VISUAL
+  ↓
+SELEÇÃO DE COMPONENTES
+  ↓
+COMPOSIÇÃO AUTOMÁTICA
+  ↓
+HARMONIZAÇÃO LEVE
+  ↓
+PNG
+```
 
-## Estado atual
-Esta versão já inclui:
+Não exige CUDA.
 
-- **backend FastAPI** com endpoints de health, system info, geração única, lote, cancelamento e download de ZIP
-- **frontend web** servido pelo próprio backend
-- **backend `mock`** funcional para validar toda a jornada de uso
-- **backend `automatic1111`** funcional para integração com um motor local já rodando (Stable Diffusion WebUI / A1111)
-- **backend `diffusers`** como _stub_ / ponto de integração futura para um modelo real embutido no próprio backend
+---
 
-> Importante: nesta versão, o modo `mock` já funciona sozinho. O modo `automatic1111` funciona se você já tiver um servidor local compatível rodando. O modo `diffusers` ainda depende de instalar e configurar um modelo de geração local.
+## Objetivo do MVP 1
 
-## Estrutura
+Responder uma pergunta:
+
+> A composição automática com memória visual consegue produzir imagens úteis para quiz sem precisar gerar todos os pixels do zero?
+
+Nesta fase **não há coleta automática nem refinamento generativo pesado**.
+
+---
+
+# Teste rápido no Windows
+
+1. Extraia o ZIP.
+2. Execute:
+
+```text
+INICIAR.bat
+```
+
+3. No primeiro uso, o programa cria um ambiente Python e instala apenas dependências leves:
+
+- FastAPI
+- Uvicorn
+- Pillow
+- Requests
+
+4. O navegador abre em:
+
+```text
+http://127.0.0.1:8011
+```
+
+5. Deixe o backend em:
+
+```text
+COMPOSER ENGINE
+```
+
+6. Clique em **Compor imagem**.
+
+Não é necessário baixar modelo de vários GB para testar o Composer.
+
+---
+
+# Banco visual inicial
+
+A pasta:
+
+```text
+visual_bank/
+```
+
+contém um banco demo criado proceduralmente pelo próprio MVP.
+
+Atualmente possui:
+
+- 10 fundos;
+- 3 poses;
+- 4 rostos/expressões;
+- 9 combinações de roupas/poses;
+- 10 objetos.
+
+Total inicial: **36 assets**.
+
+Os componentes possuem metadados em:
+
+```text
+visual_bank/metadata.json
+```
+
+O banco demo existe para validar a arquitetura, não para definir a qualidade visual final.
+
+---
+
+# Exemplos já entendidos pelo MVP
+
+## Objeto simples
+
+```text
+UM GARFO CENTRALIZADO, BEM DESTACADO, FUNDO CLARO, SEM TEXTO
+```
+
+Interpretação esperada:
+
+```text
+MODO: object_only
+FUNDO: bg_plain_light
+OBJETO: obj_fork
+```
+
+## Cena composta
+
+```text
+UM MENINO NINJA SURPRESO APONTANDO PARA UMA CAIXA EM UMA FLORESTA
+```
+
+Interpretação esperada:
+
+```text
+FUNDO: bg_forest_day
+POSE: pose_pointing_right
+ROSTO: face_surprised
+ROUPA: outfit_ninja_pointing_right
+OBJETO: obj_box
+```
+
+A interface mostra esse plano antes/ao lado do resultado para facilitar o diagnóstico.
+
+---
+
+# Lote por TXT
+
+Formato simples:
+
+```txt
+UM GARFO CENTRALIZADO, FUNDO CLARO, SEM TEXTO
+UMA MAÇÃ CENTRALIZADA, FUNDO CLARO, SEM TEXTO
+```
+
+Ou com IDs:
+
+```txt
+001|UM GARFO CENTRALIZADO, FUNDO CLARO, SEM TEXTO
+002|UMA MAÇÃ CENTRALIZADA, FUNDO CLARO, SEM TEXTO
+```
+
+O motor cria:
+
+```text
+001.png
+002.png
+manifest.json
+```
+
+E ao final disponibiliza o ZIP do lote.
+
+---
+
+# Como o Composer escolhe componentes
+
+O MVP usa um interpretador local por palavras-chave/tags.
+
+Ele tenta identificar:
+
+- cenário/fundo;
+- objeto principal;
+- presença de personagem;
+- pose;
+- expressão;
+- roupa;
+- estilo básico.
+
+Cada asset do banco possui tags. O motor calcula correspondência entre prompt e tags e seleciona o item mais adequado.
+
+Esse interpretador é propositalmente simples nesta primeira prova de conceito. Futuramente pode ser substituído por um classificador/LLM local leve sem alterar a arquitetura do banco.
+
+---
+
+# Composição
+
+O Composer usa:
+
+- camadas RGBA;
+- âncoras de cabeça/objeto;
+- compatibilidade roupa ↔ pose;
+- redimensionamento automático;
+- sombras leves;
+- harmonização não generativa de cor/contraste/nitidez.
+
+A composição final é feita com Pillow/CPU.
+
+---
+
+# Direitos e licenças
+
+Os assets demo desta versão são gerados proceduralmente pelo próprio MVP.
+
+Ao adicionar referências externas, registrar quando aplicável:
+
+- origem;
+- URL;
+- autor;
+- licença;
+- URL da licença;
+- data de coleta;
+- observações.
+
+Um motor local não elimina obrigações de copyright/licença.
+
+---
+
+# Backends experimentais mantidos
+
+A arquitetura antiga continua disponível para comparação:
+
+- `SD.CPP · EXPERIMENTAL`
+- `DIFFUSERS CPU · EXPERIMENTAL`
+- `AUTOMATIC1111`
+- `MOCK`
+
+Eles **não são mais o caminho principal**.
+
+Os scripts `INSTALAR_VULKAN.bat` e `INSTALAR_CPU.bat` permanecem no pacote apenas para experimentos futuros com refinamento generativo.
+
+---
+
+# Próximas fases
+
+## MVP 1 — atual
+
+```text
+banco manual
+→ interpretação
+→ busca
+→ composição
+→ PNG
+```
+
+## MVP 2 — coleta automática
+
+```text
+conceito ausente
+→ busca em fonte adequada
+→ download
+→ validação
+→ deduplicação
+→ registro de origem/licença
+→ classificação
+→ banco
+```
+
+## MVP 3 — refinador
+
+Adicionar uma etapa pequena para:
+
+- bordas;
+- iluminação;
+- cores;
+- roupa/corpo;
+- preenchimento;
+- unificação de estilo.
+
+Priorizar CPU / ONNX Runtime / DirectML / OpenVINO / outras opções sem CUDA.
+
+---
+
+# Estrutura principal
 
 ```text
 image_motor_mvp/
+  INICIAR.bat
   engine/
     backend.py
+    composer_engine.py
+    seed_visual_bank.py
     models.py
     server.py
     utils.py
     static/
-      index.html
-      styles.css
-      app.js
+  visual_bank/
+    metadata.json
+    LEIA-ME.txt
+    assets/
+      backgrounds/
+      poses/
+      faces/
+      outfits/
+      objects/
   outputs/
+  sample_prompts.txt
   requirements.txt
-  README.md
 ```
 
-## Como executar
+---
 
-### 1) Instalar dependências
+# O que medir
 
-```bash
-pip install -r requirements.txt
-```
+No teste, medir principalmente:
 
-### 2) Subir o servidor
-
-```bash
-cd engine
-uvicorn server:app --reload --port 8011
-```
-
-### 3) Abrir no navegador
-
-Acesse:
-
-```text
-http://localhost:8011
-```
-
-## Formato do TXT de lote
-
-Uma linha por prompt:
-
-```txt
-UM GARFO CENTRALIZADO, ILUSTRAÇÃO 2D, FUNDO CLARO, SEM TEXTO
-UMA COLHER CENTRALIZADA, ILUSTRAÇÃO 2D, FUNDO CLARO, SEM TEXTO
-```
-
-Ou com ID explícito:
-
-```txt
-001|UM GARFO CENTRALIZADO, ILUSTRAÇÃO 2D, FUNDO CLARO, SEM TEXTO
-002|UMA COLHER CENTRALIZADA, ILUSTRAÇÃO 2D, FUNDO CLARO, SEM TEXTO
-```
-
-## Backends disponíveis
-
-### 1) mock
-Usado para validar rapidamente a experiência do produto.
-
-- não depende de IA real
-- gera imagens placeholder com o prompt gravado
-- ideal para testar fila, ZIP e organização
-
-### 2) automatic1111
-Usa um servidor local compatível com a API do **Stable Diffusion WebUI (A1111)**.
-
-Por padrão, tenta conectar em:
-
-```text
-http://127.0.0.1:7860
-```
-
-Endpoint esperado:
-
-```text
-POST /sdapi/v1/txt2img
-```
-
-Você pode alterar a URL pela interface.
-
-### 3) diffusers
-Ponto de integração futura para rodar um modelo diretamente no backend Python.
-
-Hoje ele já está estruturado, mas depende de instalar pacotes como:
-
-- diffusers
-- transformers
-- accelerate
-
-...e de configurar o modelo local desejado.
-
-## Próximos passos sugeridos
-
-1. **Testar com Automatic1111 real**
-   - subir o motor local
-   - apontar a URL na interface
-   - medir latência real por imagem
-
-2. **Trocar o backend `diffusers` de stub para real**
-   - instalar dependências no PC alvo
-   - escolher um modelo rápido
-   - medir latência local real
-
-3. **Persistência local**
-   - manter fila ao recarregar
-   - reabrir jobs anteriores
-
-4. **Mais telemetria**
-   - tempo médio
-   - ETA
-   - log detalhado por item
-
-5. **Refino do lote**
-   - retry automático
-   - seleção de subset para refazer
-   - exportar manifesto JSON
-
-6. **Integração futura tipo plugin/MCP**
-   - expor `generate_batch()` e `get_status()` para o ChatGPT chamar diretamente
-
-## Observação de arquitetura
-A direção escolhida aqui é deliberada:
-
-- **UI no navegador**
-- **motor em localhost**
-
-Isso preserva a experiência simples do Forma, mas deixa o processamento pesado fora das limitações do navegador.
-
-## V0.2.1 — correção de deploy no Vercel / Sites
-
-Esta versão inclui o entrypoint explícito exigido pelo build atual do Vercel:
-
-```toml
-[tool.vercel]
-entrypoint = "engine.server:app"
-```
-
-Também transforma `engine/` em pacote Python e deixa os imports compatíveis tanto com Vercel quanto com execução local.
-
-### Observação importante sobre o motor local
-
-O Vercel consegue hospedar a interface/API, mas `127.0.0.1:7860` dentro do Vercel **não é o seu PC**. Para usar Automatic1111 na GPU da sua máquina, o Image Motor deve rodar localmente (ou usar uma ponte/túnel controlado até o motor local). O deploy no Vercel é útil para validar a interface, mas não substitui a execução local do motor.
+- tempo por imagem;
+- tempo para lote de 10;
+- RAM;
+- CPU;
+- qualidade;
+- legibilidade para quiz;
+- consistência;
+- sensação de colagem;
+- porcentagem de prompts atendidos pelo banco;
+- quais categorias precisam de mais assets;
+- quanto refinamento seria realmente necessário.
