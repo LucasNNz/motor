@@ -47,3 +47,12 @@ O modelo browser atual ainda é o gargalo para redesenho generativo forte; o res
 
 ## V0.12.9 — exportação browser-first
 No fluxo principal de produção, `Exportar operação` é montado no navegador. Isso evita depender de `/tmp` entre requisições Vercel e garante que o ZIP contenha o PNG refinado final visto pelo usuário.
+
+
+## V0.12.11 — filtro recortável para o MVP
+
+- `isolated=true` aceita referência transparente, realmente isolada ou `cutout_compatible`;
+- registra `isolation_score`, `cutout_score`, `cutout_compatible` e `acceptance_mode`;
+- fundos claros de estúdio com pequena variação podem ser removidos deterministicamente pelo Composer;
+- fundos escuros/texturizados continuam rejeitados quando o guia pede fundo claro e baixo ruído;
+- o guia de teste procura primeiro ilustração/PNG e usa foto recortável apenas como fallback.

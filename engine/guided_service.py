@@ -99,6 +99,8 @@ class GuidedExecutionService:
         if subject.get('isolated') is True:
             cfg.setdefault('require_isolated', True)
             cfg.setdefault('min_isolation_score', 0.68)
+            cfg.setdefault('allow_cutout_compatible', True)
+            cfg.setdefault('min_cutout_score', 0.42)
         if negative.get('busy_background') is True:
             cfg.setdefault('reject_busy_background', True)
         brightness = str(background.get('brightness') or '').strip().lower()

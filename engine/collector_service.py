@@ -95,10 +95,14 @@ class CollectorService:
                 if ok and cfg.get('remove_duplicates') and memory_manager.find_duplicate(source_url=cand.get('source_url'), perceptual_hash=phash, similarity_threshold=cfg['similarity_threshold']):
                     ok, reason = False, 'já existe na biblioteca'
 
+                isolation_ok = float(inspection.get('isolation_score') or 0.0) >= float(cfg.get('min_isolation_score') or 0.70)
+                cutout_ok = bool(inspection.get('cutout_compatible')) and float(inspection.get('cutout_score') or 0.0) >= float(cfg.get('min_cutout_score') or 0.42)
+                acceptance_mode = 'transparent' if inspection.get('transparent') else ('isolated' if isolation_ok else ('cutout' if cutout_ok else 'none'))
                 metadata = {
                     'width': inspection['width'], 'height': inspection['height'], 'aspect_ratio': inspection['aspect_ratio'],
                     'transparent': inspection['transparent'], 'search': search_metadata or {}, 'filter_reason': reason,
                     'downloaded_from': downloaded_from, 'download_attempts': download_attempts,
+                    'acceptance_mode': acceptance_mode,
                 }
                 if not ok:
                     result = memory_manager.add_item_from_image(
@@ -112,12 +116,19 @@ class CollectorService:
                     rejected.append({'candidate': cand, 'reason': reason, 'library_id': result.get('item', {}).get('id')}); continue
 
                 batch_hashes.append(phash)
-                composition_score = float(inspection.get('isolation_score') or 0.0)
+                # For composition, a reliably removable background is almost as useful
+                # as a natively isolated reference. Keep the two metrics separately in
+                # logs, but rank by the best compositional path available.
+                composition_score = max(float(inspection.get('isolation_score') or 0.0), float(inspection.get('cutout_score') or 0.0) * 0.92)
                 if cfg.get('prefer_light_background'):
                     composition_score = min(1.0, composition_score * 0.78 + float(inspection.get('border_brightness') or 0.0) * 0.22)
                 metadata['composition_suitability'] = round(composition_score, 4)
                 metadata['visual_metrics'] = {
                     'isolation_score': inspection.get('isolation_score'),
+                    'cutout_score': inspection.get('cutout_score'),
+                    'cutout_compatible': inspection.get('cutout_compatible'),
+                    'foreground_ratio': inspection.get('foreground_ratio'),
+                    'border_foreground_ratio': inspection.get('border_foreground_ratio'),
                     'border_uniformity': inspection.get('border_uniformity'),
                     'border_brightness': inspection.get('border_brightness'),
                     'edge_density': inspection.get('edge_density'),
@@ -189,7 +200,7 @@ class CollectorService:
                 'source_url': x['candidate'].get('source_url'), 'image_url': x['candidate'].get('image_url'),
                 'quality_score': x['quality_score'], 'relevance_score': x['relevance_score'], 'composition_score': x.get('composition_score'), 'combined_score': x['combined_score'],
                 'width': x['inspection']['width'], 'height': x['inspection']['height'],
-                'isolation_score': x['inspection'].get('isolation_score'), 'border_uniformity': x['inspection'].get('border_uniformity'),
+                'isolation_score': x['inspection'].get('isolation_score'), 'cutout_score': x['inspection'].get('cutout_score'), 'cutout_compatible': x['inspection'].get('cutout_compatible'), 'border_uniformity': x['inspection'].get('border_uniformity'),
             } for x in kept[:20]],
         }
 

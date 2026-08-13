@@ -53,7 +53,7 @@ STATIC_DIR = BASE_DIR / "static"
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 
-app = FastAPI(title="Corvo Image Engine", version="0.12.10")
+app = FastAPI(title="Corvo Image Engine", version="0.12.11")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -102,7 +102,7 @@ def get_system_info():
         "diffusers_installed": False,
         "recommended_backend": "composer",
         "notes": [
-            "V0.12.10 é guia-first e browser-first: o refinador principal é executado no navegador via WebGPU/WASM. Backends nativos locais são apenas legado opcional."
+            "V0.12.11 é guia-first e browser-first: o refinador principal é executado no navegador via WebGPU/WASM. Backends nativos locais são apenas legado opcional."
         ],
     }
     try:
@@ -150,14 +150,14 @@ def _prompt_missing_map(prompt: str) -> list[dict[str, str]]:
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "jobs": len(jobs), "version": "0.12.10", **runtime_status()}
+    return {"ok": True, "jobs": len(jobs), "version": "0.12.11", **runtime_status()}
 
 
 @app.get("/api/deployment/status")
 def deployment_status():
     data = runtime_status()
     data.update({
-        "version": "0.12.10",
+        "version": "0.12.11",
         "sdcpp_local_available": not IS_VERCEL,
         "persistent_library": not IS_VERCEL,
         "note": (
@@ -173,7 +173,7 @@ def deployment_status():
 @app.get("/api/browser/config")
 def browser_config():
     return {
-        "version": "0.12.10",
+        "version": "0.12.11",
         "architecture": "browser_first",
         "execution": {
             "preferred": "webgpu",
@@ -429,7 +429,7 @@ def generate_guided(req: GuidedGenerateRequest):
 
         result['client_export'] = {
             'mode': 'browser',
-            'version': '0.12.10',
+            'version': '0.12.11',
             'reference_files': reference_files,
         }
         # Kept for legacy/local diagnostic panels only. The production Create
@@ -508,7 +508,7 @@ def operation_reprocess(operation_id: str, req: OperationReprocessRequest):
 
         result['client_export'] = {
             'mode': 'browser',
-            'version': '0.12.10',
+            'version': '0.12.11',
             'reference_files': reference_files,
         }
         # Kept for legacy/local diagnostic panels only. The production Create

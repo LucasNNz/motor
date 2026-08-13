@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
-from PIL import Image, ImageEnhance, ImageFilter, ImageChops
+from PIL import Image, ImageEnhance, ImageFilter, ImageChops, ImageStat
 
 from .memory_manager import memory_manager
 from .seed_visual_bank import build_bank
@@ -384,13 +384,36 @@ class ComposerEngine:
             rgb_item.getpixel((1,rgb_item.height-2)), rgb_item.getpixel((rgb_item.width-2,rgb_item.height-2)),
         ]
         spread = max(max(c[i] for c in corners)-min(c[i] for c in corners) for i in range(3))
-        if spread > 34:
-            return item
         bg_color = tuple(sum(c[i] for c in corners)//len(corners) for i in range(3))
+        # If the corners are not almost identical, allow a second deterministic path
+        # for light studio-like backgrounds. This is deliberately conservative: dark
+        # or strongly textured scenes are not removed here.
+        adaptive_low = 18
+        adaptive_high = 52
+        if spread > 34:
+            sample = rgb_item.resize((96,96), Image.Resampling.BILINEAR)
+            band = 10
+            border_parts = [
+                sample.crop((0,0,96,band)), sample.crop((0,96-band,96,96)),
+                sample.crop((0,band,band,96-band)).resize((96,band), Image.Resampling.BILINEAR),
+                sample.crop((96-band,band,96,96-band)).resize((96,band), Image.Resampling.BILINEAR),
+            ]
+            border = Image.new('RGB',(96,band*4))
+            for i,part in enumerate(border_parts): border.paste(part,(0,i*band))
+            stat = ImageStat.Stat(border)
+            mean = tuple(int(v) for v in stat.mean[:3])
+            avg_mean = sum(mean)/3.0
+            avg_std = sum(stat.stddev[:3])/3.0
+            if avg_mean < 170 or avg_std > 55:
+                return item
+            bg_color = mean
+            adaptive_low = max(18, min(52, int(18 + avg_std * 0.65)))
+            adaptive_high = min(110, adaptive_low + 42)
         diff = ImageChops.difference(rgb_item, Image.new('RGB', rgb_item.size, bg_color))
         r,g,b = diff.split()
         magnitude = ImageChops.lighter(ImageChops.lighter(r,g),b)
-        mask = magnitude.point(lambda v: 0 if v < 18 else (255 if v > 52 else int((v-18)/34*255)))
+        low, high = adaptive_low, max(adaptive_low+1, adaptive_high)
+        mask = magnitude.point(lambda v: 0 if v < low else (255 if v > high else int((v-low)/(high-low)*255)))
         mask = mask.filter(ImageFilter.GaussianBlur(radius=0.7))
         item.putalpha(mask)
         return item
