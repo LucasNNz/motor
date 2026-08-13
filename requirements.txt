@@ -1,0 +1,10 @@
+fastapi>=0.111.0
+uvicorn>=0.30.0
+pillow>=10.4.0
+requests>=2.32.0
+# Optional for the embedded real local-model backend:
+# torch
+# diffusers
+# transformers
+# accelerate
+# safetensors

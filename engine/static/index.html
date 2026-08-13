@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Image Motor MVP</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <h1>Image Motor MVP</h1>
+        <p>Teste inicial do gerador separado, inspirado na lógica de lote do Forma.</p>
+      </div>
+      <div>
+        <div id="healthBadge" class="badge">Conectando...</div>
+        <div id="systemBadge" class="sub-badge"></div>
+      </div>
+    </header>
+
+    <main class="grid">
+      <section class="panel">
+        <h2>Geração única</h2>
+        <label>Prompt</label>
+        <textarea id="singlePrompt" rows="6" placeholder="Descreva a imagem..."></textarea>
+        <div class="inline-fields">
+          <div>
+            <label>Backend</label>
+            <select id="singleBackend">
+              <option value="mock">mock</option>
+              <option value="automatic1111">automatic1111</option>
+              <option value="diffusers">diffusers</option>
+            </select>
+          </div>
+          <div>
+            <label>Engine URL (opcional)</label>
+            <input id="singleEngineUrl" type="text" value="http://127.0.0.1:7860" />
+          </div>
+          <div>
+            <label>Largura</label>
+            <input id="singleWidth" type="number" value="768" min="256" step="64" />
+          </div>
+          <div>
+            <label>Altura</label>
+            <input id="singleHeight" type="number" value="768" min="256" step="64" />
+          </div>
+          <div>
+            <label>Steps</label>
+            <input id="singleSteps" type="number" value="4" min="1" max="50" />
+          </div>
+        </div>
+        <div class="actions">
+          <button id="generateOneBtn">Gerar imagem</button>
+        </div>
+        <div id="singleMeta" class="meta"></div>
+        <div class="preview-box"><img id="singlePreview" alt="Preview" /></div>
+      </section>
+
+      <section class="panel">
+        <h2>Lote por TXT</h2>
+        <label>Prompts (uma linha por item ou ID|prompt)</label>
+        <textarea id="batchText" rows="12" placeholder="001|UM GARFO CENTRALIZADO, ILUSTRAÇÃO 2D\n002|UMA COLHER CENTRALIZADA, ILUSTRAÇÃO 2D"></textarea>
+        <div class="inline-fields">
+          <div>
+            <label>Backend</label>
+            <select id="batchBackend">
+              <option value="mock">mock</option>
+              <option value="automatic1111">automatic1111</option>
+              <option value="diffusers">diffusers</option>
+            </select>
+          </div>
+          <div>
+            <label>Engine URL (opcional)</label>
+            <input id="batchEngineUrl" type="text" value="http://127.0.0.1:7860" />
+          </div>
+          <div>
+            <label>Largura</label>
+            <input id="batchWidth" type="number" value="768" min="256" step="64" />
+          </div>
+          <div>
+            <label>Altura</label>
+            <input id="batchHeight" type="number" value="768" min="256" step="64" />
+          </div>
+          <div>
+            <label>Steps</label>
+            <input id="batchSteps" type="number" value="4" min="1" max="50" />
+          </div>
+        </div>
+        <div class="actions wrap">
+          <button id="startBatchBtn">Iniciar lote</button>
+          <button id="cancelBatchBtn" class="ghost">Cancelar</button>
+          <a id="downloadZipLink" class="ghost disabled" href="#" download>Baixar ZIP</a>
+        </div>
+        <div id="batchSummary" class="meta"></div>
+        <div class="queue-table-wrap">
+          <table class="queue-table">
+            <thead>
+              <tr><th>ID</th><th>Status</th><th>Tempo</th><th>Arquivo / Erro</th></tr>
+            </thead>
+            <tbody id="queueBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
