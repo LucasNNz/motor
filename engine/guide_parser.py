@@ -55,6 +55,35 @@ class ParsedGuide:
             if name.startswith("SEARCH_"):
                 for row in rows:
                     out.append((name, row))
+
+        # Compatibility with human-readable guides that place the component name
+        # before SEARCH. Normalize them into the Engine's canonical contract.
+        aliases = {
+            'SUBJECT_SEARCH': ('SEARCH_CHARACTER', 'SUBJECT', 'reference_target', 'concept'),
+            'BACKGROUND_SEARCH': ('SEARCH_BACKGROUND', 'BACKGROUND', 'environment', 'concept'),
+            'POSE_SEARCH': ('SEARCH_POSE', 'SUBJECT', 'pose', 'pose'),
+        }
+        existing = {name for name, _ in out}
+        for source_name, (target_name, context_name, concept_key, context_key) in aliases.items():
+            if target_name in existing:
+                continue
+            context = self.first(context_name)
+            for row in self.all(source_name):
+                block = dict(row)
+                queries = block.get('queries')
+                if isinstance(queries, str):
+                    queries = [queries]
+                if isinstance(queries, (list, tuple)) and queries:
+                    block.setdefault('query', str(queries[0]))
+                    if len(queries) > 1:
+                        block.setdefault('fallback_queries', [str(x) for x in queries[1:]])
+                if block.get('search_required') is not None:
+                    block.setdefault('required', block.get('search_required'))
+                if block.get('preferred_sources') is not None:
+                    block.setdefault('providers', block.get('preferred_sources'))
+                if context.get(context_key):
+                    block.setdefault(concept_key, context.get(context_key))
+                out.append((target_name, block))
         return out
 
 
@@ -65,6 +94,7 @@ class GuideParser:
         sections: dict[str, list[dict[str, Any]]] = {}
         current: dict[str, Any] | None = None
         current_name: str | None = None
+        pending_key: str | None = None
         for raw_line in (text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n"):
             line = raw_line.strip()
             if not line or line.startswith("#") or line.startswith(";"):
@@ -73,15 +103,25 @@ class GuideParser:
             if match:
                 current_name = match.group(1).strip().upper()
                 current = {}
+                pending_key = None
                 sections.setdefault(current_name, []).append(current)
                 continue
             if current is None or current_name is None:
                 continue
             if "=" in line:
                 key, value = line.split("=", 1)
-                current[key.strip().lower()] = _coerce(value)
+                key = key.strip().lower()
+                if value.strip() == '':
+                    current[key] = []
+                    pending_key = key
+                else:
+                    current[key] = _coerce(value)
+                    pending_key = None
             else:
-                current.setdefault("_lines", []).append(line)
+                if pending_key:
+                    current.setdefault(pending_key, []).append(line)
+                else:
+                    current.setdefault("_lines", []).append(line)
         return ParsedGuide(raw=text or "", sections=sections)
 
 

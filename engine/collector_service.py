@@ -83,6 +83,13 @@ class CollectorService:
                     continue
             except Exception:
                 pass
+            # Reject a semantically incompatible result before downloading it. This
+            # keeps ambiguous provider matches from consuming the fast-MVP budget and
+            # leaves more time for illustration/vector fallbacks.
+            metadata_reason = filter_pipeline.metadata_rejection(cand, cfg)
+            if metadata_reason:
+                rejected.append({'candidate': cand, 'reason': metadata_reason})
+                continue
             try:
                 image_bytes, downloaded_from, download_attempts = filter_pipeline.download_candidate(cand, max_attempts=max_download_attempts)
                 inspection = filter_pipeline.inspect(image_bytes)

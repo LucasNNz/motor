@@ -35,7 +35,7 @@ class GuidedExecutionService:
         issues: list[str] = []
         warnings: list[str] = []
 
-        if mode == 'guided' and not guide.search_blocks():
+        if mode in {'guided', 'guided_composite'} and not guide.search_blocks():
             issues.append('nenhum bloco SEARCH_* foi informado')
 
         if task == 'single_object_quiz':
@@ -81,6 +81,20 @@ class GuidedExecutionService:
                 }.get(view_norm, (view_norm,))
                 if not any(term in query_text for term in view_terms):
                     warnings.append(f'desired_view={desired_view} não aparece nas queries de SEARCH_OBJECT; o Engine não consegue validar perspectiva visual sozinho')
+
+        if task == 'character_in_environment':
+            character_searches = [block for section, block in guide.search_blocks() if section == 'SEARCH_CHARACTER']
+            background_searches = [block for section, block in guide.search_blocks() if section == 'SEARCH_BACKGROUND']
+            if not subject.get('concept'):
+                issues.append('[SUBJECT] concept=...')
+            if not character_searches or not character_searches[0].get('query'):
+                issues.append('[SEARCH_CHARACTER] query=... ou [SUBJECT_SEARCH] queries=...')
+            if not background_searches or not background_searches[0].get('query'):
+                issues.append('[SEARCH_BACKGROUND] query=... ou [BACKGROUND_SEARCH] queries=...')
+            if not comp:
+                issues.append('[COMPOSITION] com escala e posição do personagem')
+            if not (output.get('width') and output.get('height')) and not output.get('aspect_ratio') and not comp.get('canvas'):
+                issues.append('[OUTPUT] aspect_ratio=... ou [COMPOSITION] canvas=...')
 
         return {
             'valid': not issues, 'issues': issues, 'warnings': warnings,
@@ -134,7 +148,10 @@ class GuidedExecutionService:
             'wikimedia': 'wikimedia_commons', 'commons': 'wikimedia_commons',
             'open_verse': 'openverse', 'open-verse': 'openverse',
         }
-        return [aliases.get(x.lower(), x.lower()) for x in values] or list(defaults)
+        normalized = [aliases.get(x.lower(), x.lower()) for x in values]
+        supported = {'openverse', 'wikimedia_commons'}
+        usable = [x for x in normalized if x in supported]
+        return usable or [x for x in defaults if x in supported]
 
     @staticmethod
     def _queries_for_spec(spec: dict[str, Any]) -> list[str]:
@@ -159,7 +176,7 @@ class GuidedExecutionService:
                 numbered.append((idx, str(value).strip()))
         values.extend(v for _, v in sorted(numbered) if v)
 
-        # V0.12.14 compatibility repair. Older guides commonly asked only for
+        # V0.12.16 compatibility repair. Older guides commonly asked only for
         # photographic variants such as ``fork isolated front view``. Openverse can
         # legitimately return tables, hands and tiny thumbnails for those queries,
         # leaving a perfectly usable icon/illustration route unexplored. For object
@@ -178,11 +195,11 @@ class GuidedExecutionService:
             core = ' '.join(core_tokens).strip() or str(spec.get('concept') or primary).strip()
             if core.casefold() in {'fork', 'spoon', 'knife'}:
                 clean_route = [
+                    f'{core} cutlery illustration',
+                    f'{core} cutlery vector',
+                    f'{core} cutlery icon',
                     f'{core} cutlery',
                     f'table {core} utensil',
-                    f'dining {core} silverware',
-                    f'{core} cutlery illustration',
-                    f'{core} utensil isolated',
                 ]
             else:
                 clean_route = [
@@ -225,6 +242,9 @@ class GuidedExecutionService:
 
     def _resolve_output_size(self, guide: ParsedGuide, width: int, height: int) -> tuple[int, int, dict[str, Any]]:
         out = dict(guide.first('OUTPUT') or {})
+        comp = dict(guide.first('COMPOSITION') or {})
+        if not out.get('aspect_ratio') and comp.get('canvas'):
+            out['aspect_ratio'] = comp.get('canvas')
         requested = {'ui_width': int(width), 'ui_height': int(height), **out}
         explicit_w = out.get('width')
         explicit_h = out.get('height')
@@ -417,6 +437,14 @@ class GuidedExecutionService:
                 attempt_filters['_semantic_query'] = query_value
                 attempt_filters['_semantic_concept'] = spec['concept']
                 attempt_filters['_semantic_type'] = spec['type']
+                if spec['type'] == 'character':
+                    attempt_filters['require_isolated'] = True
+                    attempt_filters['allow_cutout_compatible'] = True
+                    attempt_filters.setdefault('min_cutout_score', 0.42)
+                elif spec['type'] == 'background':
+                    attempt_filters['require_isolated'] = False
+                    attempt_filters['prefer_light_background'] = False
+                    attempt_filters['reject_busy_background'] = False
                 attempt = collector_service.collect(
                     query=query_value, type_name=spec['type'], concept=spec['concept'], providers=spec_providers,
                     per_provider=min(12, max(2, collect_limit // max(1, len(spec_providers)))),
@@ -548,13 +576,14 @@ class GuidedExecutionService:
     def _selected_references(self, guide: ParsedGuide, composition: dict[str, Any], *, allow_candidates: bool = False) -> list[dict[str, Any]]:
         refs: dict[str, dict[str, Any]] = {}
         plan = (composition or {}).get('plan') or {}
-        for label in ['background', 'pose', 'face', 'outfit', 'object']:
+        for label in ['background', 'character', 'pose', 'face', 'outfit', 'object']:
             item = plan.get(label) or {}
             item_id = item.get('id')
             if item_id:
                 refs[f'composer_{label}'] = {'label': f'composer_{label}', 'id': item_id, 'source': item.get('source'), 'file': item.get('file')}
         plan_type_map = {
             'background': plan.get('background') or {},
+            'character': plan.get('character') or {},
             'pose': plan.get('pose') or {},
             'face': plan.get('face') or {},
             'expression': plan.get('face') or {},

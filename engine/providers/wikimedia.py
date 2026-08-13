@@ -24,7 +24,7 @@ class WikimediaCommonsProvider:
             'inprop': 'url',
         }
         # Wikimedia requires an identifying User-Agent for API clients.
-        ua = os.environ.get('CORVO_USER_AGENT', 'CorvoImageEngine/0.12.14 (guided visual reference collector)')
+        ua = os.environ.get('CORVO_USER_AGENT', 'CorvoImageEngine/0.12.16 (guided visual reference collector)')
         headers = {
             'User-Agent': ua,
             'Api-User-Agent': ua,

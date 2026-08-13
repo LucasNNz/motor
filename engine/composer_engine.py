@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
-from PIL import Image, ImageEnhance, ImageFilter, ImageChops, ImageStat
+from PIL import Image, ImageEnhance, ImageFilter, ImageChops, ImageStat, ImageDraw
 
 from .memory_manager import memory_manager
 from .seed_visual_bank import build_bank
@@ -35,6 +35,7 @@ class Plan:
     prompt: str
     normalized_prompt: str
     background: Optional[dict[str, Any]] = None
+    character: Optional[dict[str, Any]] = None
     pose: Optional[dict[str, Any]] = None
     face: Optional[dict[str, Any]] = None
     outfit: Optional[dict[str, Any]] = None
@@ -63,6 +64,7 @@ class Plan:
             "style": self.style,
             "confidence": round(self.confidence, 3),
             "background": compact(self.background),
+            "character": compact(self.character),
             "pose": compact(self.pose),
             "face": compact(self.face),
             "outfit": compact(self.outfit),
@@ -589,9 +591,45 @@ class ComposerEngine:
             }
         return base
 
-    def _compose_character_scene(self, plan: Plan, width: int, height: int) -> Image.Image:
+    def _compose_character_scene(self, plan: Plan, width: int, height: int, composition_rules: Optional[dict[str, Any]] = None) -> Image.Image:
         bg = Image.open(self.bank.asset_path(plan.background)) if plan.background else Image.new("RGB", (512, 512), (245, 248, 252))
         base = self._fit_background(bg, width, height)
+        rules = composition_rules or {}
+        if plan.character:
+            character = Image.open(self.bank.asset_path(plan.character)).convert('RGBA')
+            character = self._remove_uniform_background(character)
+            character = self._crop_alpha_subject(character, pad_ratio=0.025)
+            scale_value = rules.get('subject_scale', 0.69)
+            scale = self._fraction(scale_value, 0.69)
+            if isinstance(scale_value, str):
+                fractions = [float(x) for x in re.findall(r'0\.\d+|1\.0+', scale_value)]
+                if fractions:
+                    scale = sum(fractions) / len(fractions)
+            scale = max(0.35, min(0.82, scale))
+            target_h = max(64, int(height * scale))
+            target_w = max(64, int(width * 0.62))
+            fit = min(target_w / max(1, character.width), target_h / max(1, character.height))
+            rw = max(1, int(character.width * fit)); rh = max(1, int(character.height * fit))
+            character = character.resize((rw, rh), Image.Resampling.LANCZOS)
+            cx = self._fraction(rules.get('subject_x', rules.get('subject_position')), 0.50)
+            ground_y = self._fraction(rules.get('ground_y'), 0.94)
+            x = max(0, min(width-rw, int(width*cx-rw/2)))
+            y = max(0, min(height-rh, int(height*ground_y-rh)))
+            if bool(rules.get('ground_contact_required', True)):
+                shadow_layer = Image.new('RGBA', base.size, (0,0,0,0))
+                draw = ImageDraw.Draw(shadow_layer)
+                shadow_w = max(18, int(rw * 0.48)); shadow_h = max(7, int(height * 0.018))
+                sx = x + rw//2; sy = min(height-2, y+rh)
+                draw.ellipse((sx-shadow_w//2, sy-shadow_h//2, sx+shadow_w//2, sy+shadow_h//2), fill=(18,24,32,72))
+                shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(radius=max(2, shadow_h//2)))
+                base.alpha_composite(shadow_layer)
+            base.alpha_composite(character, (x, y))
+            self.last_info['composer_geometry'] = {
+                'character_reference': plan.character.get('id'), 'subject_scale': round(scale, 4),
+                'subject_box_px': [x, y, rw, rh], 'ground_y': ground_y,
+                'full_body_direct_composition': True,
+            }
+            return base
         pose = plan.pose
         anchors = (pose or {}).get("anchors", {}) or {}
         if pose:
@@ -612,6 +650,35 @@ class ComposerEngine:
         rgb = ImageEnhance.Contrast(rgb).enhance(1.035)
         rgb = ImageEnhance.Sharpness(rgb).enhance(1.05)
         return rgb
+
+    @staticmethod
+    def _stylize_2d_semirealistic(img: Image.Image) -> Image.Image:
+        """Deterministic photo-to-clean-2D treatment for guided MVP output.
+
+        The browser model currently performs super-resolution, not generative style
+        transfer. When the guide explicitly requests 2D/illustration, flatten local
+        color variation, preserve a controlled amount of photographic material detail
+        and reinforce only meaningful edges before browser refinement.
+        """
+        original = img.convert('RGB')
+        softened = original.filter(ImageFilter.MedianFilter(size=3)).filter(ImageFilter.SMOOTH_MORE)
+        poster = softened.quantize(colors=28, method=Image.Quantize.FASTOCTREE).convert('RGB')
+        painted = Image.blend(original, poster, 0.86)
+        painted = ImageEnhance.Color(painted).enhance(0.88)
+        painted = ImageEnhance.Contrast(painted).enhance(1.075)
+
+        edge_source = original.convert('L').filter(ImageFilter.GaussianBlur(radius=0.7)).filter(ImageFilter.FIND_EDGES)
+        edge_source = ImageEnhance.Contrast(edge_source).enhance(1.9)
+        edge_mask = edge_source.point(lambda v: 0 if v < 21 else min(150, int((v - 21) * 0.90)))
+        # Prevent the image canvas itself from gaining a dark outline.
+        edge_mask.paste(0, (0, 0, edge_mask.width, 2))
+        edge_mask.paste(0, (0, max(0, edge_mask.height-2), edge_mask.width, edge_mask.height))
+        edge_mask.paste(0, (0, 0, 2, edge_mask.height))
+        edge_mask.paste(0, (max(0, edge_mask.width-2), 0, edge_mask.width, edge_mask.height))
+        ink = Image.new('RGB', painted.size, (42, 47, 56))
+        illustrated = Image.composite(ink, painted, edge_mask)
+        illustrated = ImageEnhance.Sharpness(illustrated).enhance(1.08)
+        return illustrated
 
 
     @staticmethod
@@ -700,13 +767,14 @@ class ComposerEngine:
             or str(subject_block.get('type') or '').lower() in {'character', 'personagem', 'person'}
         )
         background = self._guided_asset('background', bg_terms, allow_candidates=allow_candidates, reference_id=reference_overrides.get('background')) if bg_search_block else None
-        pose = self._guided_asset('pose', pose_terms, default_id='pose_standing_center', allow_candidates=allow_candidates, reference_id=reference_overrides.get('pose')) if has_character else None
-        face = self._guided_asset('face', face_terms, default_id='face_neutral', allow_candidates=allow_candidates, reference_id=reference_overrides.get('face')) if has_character else None
-        outfit = self._guided_asset('outfit', cloth_terms or char_terms, allow_candidates=allow_candidates, reference_id=reference_overrides.get('outfit')) if has_character else None
+        character = self._guided_asset('character', char_terms, allow_candidates=allow_candidates, reference_id=reference_overrides.get('character')) if char_block else None
+        pose = None if character else (self._guided_asset('pose', pose_terms, default_id='pose_standing_center', allow_candidates=allow_candidates, reference_id=reference_overrides.get('pose')) if has_character else None)
+        face = None if character else (self._guided_asset('face', face_terms, default_id='face_neutral', allow_candidates=allow_candidates, reference_id=reference_overrides.get('face')) if has_character else None)
+        outfit = None if character else (self._guided_asset('outfit', cloth_terms or char_terms, allow_candidates=allow_candidates, reference_id=reference_overrides.get('outfit')) if has_character else None)
         obj = self._guided_asset('object', obj_terms, allow_candidates=allow_candidates, reference_id=reference_overrides.get('object')) if obj_terms else None
-        confs = [0.7 if x else 0 for x in [background, pose, face, outfit, obj] if x is not None]
+        confs = [0.7 if x else 0 for x in [background, character, pose, face, outfit, obj] if x is not None]
         plan = Plan(
-            prompt='[GUIDED_EXECUTION]', normalized_prompt='guided_execution', background=background, pose=pose,
+            prompt='[GUIDED_EXECUTION]', normalized_prompt='guided_execution', background=background, character=character, pose=pose,
             face=face, outfit=outfit, object=obj, style=str(scene.get('style') or '2d_clean'),
             mode='character_scene' if has_character else 'object_only', confidence=sum(confs)/len(confs) if confs else 0.0,
         )
@@ -716,6 +784,7 @@ class ComposerEngine:
             'object_request': obj_block, 'subject_request': subject_block,
             'selected': {
                 'background': background.get('id') if background else None,
+                'character': character.get('id') if character else None,
                 'pose': pose.get('id') if pose else None,
                 'face': face.get('id') if face else None,
                 'outfit': outfit.get('id') if outfit else None,
@@ -728,7 +797,7 @@ class ComposerEngine:
         self.bank.reload()
         plan, extra = self.plan_from_guide(guide, allow_candidates=allow_candidates, reference_overrides=reference_overrides)
         if plan.mode == 'character_scene':
-            image = self._compose_character_scene(plan, width, height)
+            image = self._compose_character_scene(plan, width, height, extra.get('composition_rules'))
         else:
             image = self._compose_object_only(
                 plan, width, height, extra.get('composition_rules'), extra.get('background_request'),
@@ -755,10 +824,23 @@ class ComposerEngine:
             rgb = ImageEnhance.Contrast(rgb).enhance(0.96)
         elif contrast in {'high', 'alto', 'alta'}:
             rgb = ImageEnhance.Contrast(rgb).enhance(1.07)
+        style_request = extra.get('style_request') or {}
+        style_terms = self._guide_terms(
+            style_request.get('style'), style_request.get('target'), style_request.get('finish'),
+            style_request.get('render_style'), plan.style,
+        )
+        style_transform = 'light_harmonization'
+        if any(term in style_terms for term in ('2d', 'illustration', 'illustracao', 'semirealistic', 'semirrealista')):
+            rgb = self._stylize_2d_semirealistic(rgb)
+            style_transform = 'deterministic_2d_semirealistic'
         image = self._harmonize(rgb)
         geometry = dict(self.last_info.get('composer_geometry') or {})
-        self.last_info = {'plan': plan.as_dict(), 'guided': extra, 'bank': self.bank.status(), 'refiner': 'off', 'composer_geometry': geometry}
-        for asset in [plan.background, plan.pose, plan.face, plan.outfit, plan.object]:
+        self.last_info = {
+            'plan': plan.as_dict(), 'guided': extra, 'bank': self.bank.status(),
+            'refiner': 'off', 'composer_geometry': geometry,
+            'style_transform': style_transform, 'style_terms': style_terms,
+        }
+        for asset in [plan.background, plan.character, plan.pose, plan.face, plan.outfit, plan.object]:
             if asset and asset.get('source') and asset.get('source') != 'demo_bank' and memory_manager.by_id.get(asset.get('id')):
                 memory_manager.mark_used(asset['id'])
         return image

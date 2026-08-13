@@ -36,7 +36,7 @@ class FilterPipeline:
         self.session.mount('https://', HTTPAdapter(max_retries=retry))
         self.session.mount('http://', HTTPAdapter(max_retries=retry))
         self.headers = {
-            'User-Agent': 'CorvoImageEngine/0.12.14 (visual-reference-fetcher)',
+            'User-Agent': 'CorvoImageEngine/0.12.16 (visual-reference-fetcher)',
             'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
         }
 
@@ -271,8 +271,29 @@ class FilterPipeline:
             str(candidate.get('image_url') or ''),
         ]))
         semantic_query = normalize_text(str(filters.get('_semantic_query') or ''))
+        semantic_concept = normalize_text(str(filters.get('_semantic_concept') or ''))
+        semantic_type = normalize_text(str(filters.get('_semantic_type') or ''))
         semantic_tokens = set(semantic_query.split())
         metadata_tokens = set(text.split())
+
+        if semantic_type == 'character':
+            identity_tokens = [
+                token for token in semantic_concept.split()
+                if len(token) >= 4 and token not in {'character', 'personagem', 'main', 'principal'}
+            ]
+            # A named character must be named by the source metadata. For
+            # "Naruto Uzumaki", accepting Naruto alone is sufficient, while a generic
+            # anime/ninja result is not.
+            if identity_tokens and not any(token in metadata_tokens for token in identity_tokens):
+                return f'metadados sem evidência da identidade {semantic_concept}'
+
+        if semantic_type == 'background':
+            classroom_terms = {'classroom', 'school', 'schoolroom', 'escola', 'escolar', 'sala', 'aula', 'colegio'}
+            if ({'classroom', 'school'} & semantic_tokens or {'escola', 'aula'} & set(semantic_concept.split())) and not (metadata_tokens & classroom_terms):
+                return 'metadados sem evidência de sala de aula/escola'
+            if {'brasil', 'brasileira', 'brasileiro', 'brazil', 'brazilian'} & set(semantic_concept.split()):
+                if not (metadata_tokens & {'brasil', 'brasileira', 'brasileiro', 'brazil', 'brazilian'}):
+                    return 'metadados sem evidência de ambiente brasileiro'
 
         # Deterministic sense guard for common quiz objects. Search providers may
         # interpret ambiguous English words in unrelated senses (fork=river branch,

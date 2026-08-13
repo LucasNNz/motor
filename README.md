@@ -1,4 +1,4 @@
-# Corvo Image Engine V0.12.14 — MVP de Produção Guiada
+# Corvo Image Engine V0.12.16 — MVP de Produção Guiada
 
 A entrada principal agora é **PROMPT + GUIA TXT**. O Engine não tenta substituir a IA que planejou a imagem: ele executa as instruções do guia.
 
@@ -71,3 +71,22 @@ No fluxo principal de produção, `Exportar operação` é montado no navegador.
 - o conceito esperado não aumenta mais artificialmente a relevância do candidato;
 - PNG com alpha apenas parcial não é mais tratado como objeto perfeitamente transparente;
 - `/api/health` deve responder `version=0.12.14` e `X-Corvo-Build: 0.12.14-semantic-guard`.
+
+## Execução de estilo 2D preservada
+
+- ilustração, vetor e ícone são pesquisados antes da fotografia de talheres;
+- candidatos semanticamente errados são descartados antes do download;
+- `STYLE style=2d_semirealistic` ativa achatamento controlado de cores, limpeza e contornos;
+- o log de composição registra `style_transform=deterministic_2d_semirealistic`;
+- o build atual é identificado exclusivamente pelos marcadores da V0.12.16 abaixo.
+
+## V0.12.16 — contrato composto executável
+
+- `[SUBJECT_SEARCH]` é normalizado para `SEARCH_CHARACTER`;
+- `[BACKGROUND_SEARCH]` é normalizado para `SEARCH_BACKGROUND`;
+- listas multilinha em `queries=` passam a ser lidas na ordem correta;
+- `canvas=16:9` controla a saída mesmo sem bloco `[OUTPUT]`;
+- personagem de corpo inteiro é composto diretamente sobre o fundo, com escala, contato com o chão e sombra;
+- identidade do personagem e origem brasileira do cenário são verificadas nos metadados;
+- busca obrigatória ausente ou sem referência válida gera erro, nunca imagem branca;
+- `/api/health` deve responder `version=0.12.16` e `X-Corvo-Build: 0.12.16-composite-contract`.
