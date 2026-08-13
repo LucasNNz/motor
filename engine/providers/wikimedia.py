@@ -24,14 +24,16 @@ class WikimediaCommonsProvider:
             'inprop': 'url',
         }
         # Wikimedia requires an identifying User-Agent for API clients.
-        ua = os.environ.get('CORVO_USER_AGENT', 'CorvoImageEngine/0.13 (guided visual reference collector)')
+        ua = os.environ.get('CORVO_USER_AGENT', 'CorvoImageEngine/0.12.2 (guided visual reference collector)')
         headers = {
             'User-Agent': ua,
             'Api-User-Agent': ua,
             'Accept': 'application/json',
         }
-        response = requests.get(self.endpoint, params=params, headers=headers, timeout=60)
-        response.raise_for_status()
+        response = requests.get(self.endpoint, params=params, headers=headers, timeout=45)
+        if not response.ok:
+            body = (response.text or '')[:500].replace('\n', ' ')
+            raise RuntimeError(f'Wikimedia HTTP {response.status_code}: {body}')
         payload = response.json()
         pages = (payload.get('query') or {}).get('pages') or []
         if isinstance(pages, dict):

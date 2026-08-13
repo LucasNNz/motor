@@ -102,16 +102,34 @@ class GuidedExecutionService:
                 pass
         return int(width), int(height), requested
 
-    def _validate_required_searches(self, guide: ParsedGuide, *, allow_candidates: bool) -> None:
+    def _validate_required_searches(self, guide: ParsedGuide, *, allow_candidates: bool, search_log: list[dict[str, Any]] | None = None) -> None:
         missing: list[str] = []
+        search_log = list(search_log or [])
         for spec in self._all_search_specs(guide):
             if not self._search_required(spec['block']):
                 continue
             found = memory_manager.search_best(
                 spec['concept'], spec['type'], limit=1, approved_only=not allow_candidates
             )
-            if not found:
-                missing.append(f"{spec['section']} query={spec['query']!r} concept={spec['concept']!r}")
+            if found:
+                continue
+            detail = f"{spec['section']} query={spec['query']!r} concept={spec['concept']!r}"
+            entry = next((x for x in search_log if (x.get('spec') or {}).get('section') == spec['section'] and (x.get('spec') or {}).get('query') == spec['query']), None)
+            result = (entry or {}).get('result') or {}
+            diag = result.get('diagnostics') or {}
+            if diag:
+                detail += (
+                    f" [encontrados={diag.get('candidates_found', 0)}, passaram_filtro={diag.get('kept_after_filter', 0)}, "
+                    f"salvos={diag.get('saved_count', 0)}"
+                )
+                provider_errors = diag.get('provider_errors') or []
+                if provider_errors:
+                    detail += f", erros_provider={' | '.join(str(x) for x in provider_errors[:3])}"
+                reasons = diag.get('top_rejection_reasons') or []
+                if reasons:
+                    detail += ', rejeicoes=' + ' | '.join(f"{reason} ({count})" for reason, count in reasons[:4])
+                detail += ']'
+            missing.append(detail)
         if missing:
             raise RuntimeError(
                 'Busca obrigatória sem referência utilizável. O Engine não usará asset demo silenciosamente: ' + '; '.join(missing)
@@ -250,7 +268,7 @@ class GuidedExecutionService:
             # Explicit SEARCH_* blocks are instructions, not suggestions. Unless the
             # TXT marks a block optional/fallback, do not hide a failed search by
             # silently substituting an unrelated demo asset.
-            self._validate_required_searches(guide, allow_candidates=allow_candidates)
+            self._validate_required_searches(guide, allow_candidates=allow_candidates, search_log=search_log)
 
             compose_started = time.perf_counter()
             base = composer_engine.generate_guided(guide, width, height, allow_candidates=allow_candidates)

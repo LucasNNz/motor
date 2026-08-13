@@ -4,6 +4,8 @@ import io
 from typing import Any, Optional
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from PIL import Image
 
 from .memory_manager import average_hash, hamming_distance_hex, normalize_text
@@ -22,10 +24,43 @@ DEFAULT_FILTERS = {
 
 
 class FilterPipeline:
+    def __init__(self):
+        self.session = requests.Session()
+        retry = Retry(total=2, connect=2, read=2, backoff_factor=0.35, status_forcelist=(429, 500, 502, 503, 504), allowed_methods=frozenset(['GET']))
+        self.session.mount('https://', HTTPAdapter(max_retries=retry))
+        self.session.mount('http://', HTTPAdapter(max_retries=retry))
+        self.headers = {
+            'User-Agent': 'CorvoImageEngine/0.12.2 (visual-reference-fetcher)',
+            'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+        }
+
     def download_image(self, url: str) -> bytes:
-        response = requests.get(url, timeout=120, headers={'User-Agent': 'CorvoImageEngine/0.7'})
+        response = self.session.get(url, timeout=45, headers=self.headers, allow_redirects=True)
         response.raise_for_status()
+        if not response.content:
+            raise ValueError('download vazio')
         return response.content
+
+    def download_candidate(self, candidate: dict[str, Any]) -> tuple[bytes, str, list[dict[str, str]]]:
+        urls = []
+        for value in (candidate.get('download_urls') or []):
+            if value and value not in urls:
+                urls.append(str(value))
+        for value in (candidate.get('thumbnail_url'), candidate.get('image_url')):
+            if value and value not in urls:
+                urls.append(str(value))
+        attempts: list[dict[str, str]] = []
+        last_error: Exception | None = None
+        for url in urls:
+            try:
+                data = self.download_image(url)
+                # Decode here so a 200 HTML error page is not accepted as an image.
+                Image.open(io.BytesIO(data)).verify()
+                return data, url, attempts
+            except Exception as exc:
+                last_error = exc
+                attempts.append({'url': url, 'error': str(exc)[:240]})
+        raise RuntimeError(f"nenhum URL da referência pôde ser baixado ({len(urls)} tentativa(s)): {last_error}")
 
     def inspect(self, image_bytes: bytes) -> dict[str, Any]:
         img = Image.open(io.BytesIO(image_bytes)).convert('RGBA')
@@ -41,17 +76,19 @@ class FilterPipeline:
         }
 
     def quality_score(self, width: int, height: int, transparent: bool, title: Optional[str], tags: list[str]) -> float:
-        score = 0.0
-        px = width * height
-        if px >= 1536 * 1536: score += 0.58
-        elif px >= 1024 * 1024: score += 0.48
-        elif px >= 768 * 768: score += 0.40
-        elif px >= 512 * 512: score += 0.30
-        elif px >= 256 * 256: score += 0.18
-        else: score += 0.05
-        if transparent: score += 0.12
-        if title and len(title) > 5: score += 0.08
-        if tags: score += min(len(tags), 8) * 0.025
+        # Calibrated for the guide semantics: a normal 512px usable reference should
+        # live around 0.60 instead of being treated as low quality by construction.
+        short = min(int(width or 0), int(height or 0))
+        if short >= 1536: score = 0.76
+        elif short >= 1024: score = 0.70
+        elif short >= 768: score = 0.64
+        elif short >= 512: score = 0.56
+        elif short >= 384: score = 0.48
+        elif short >= 256: score = 0.38
+        else: score = 0.18
+        if transparent: score += 0.05
+        if title and len(str(title).strip()) > 5: score += 0.05
+        if tags: score += min(len(tags), 6) * 0.02
         return min(score, 1.0)
 
     def relevance_score(self, query: str, title: Optional[str], tags: list[str], concept: Optional[str]) -> float:

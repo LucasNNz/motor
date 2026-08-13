@@ -922,7 +922,7 @@ async function runBrowserBatch(text) {
   batchSummary.textContent = `LOTE BROWSER · preparando refinador uma única vez para ${items.length} imagem(ns)...`;
   const prepared = await prepareBrowserRefiner();
   const manifest = {
-    version: '0.12.1',
+    version: '0.12.2',
     execution: 'browser_client',
     generated_at: new Date().toISOString(),
     model: browserModel.value || DEFAULT_MODEL,
@@ -1302,7 +1302,7 @@ guidedReprocessBtn.addEventListener('click', reprocessGuidedRegion);
 Promise.all([refreshHealth(), refreshComposerStatus(false), refreshMemoryGallery(), refreshRefinerStatus(), refreshBrowserRuntime()]).then(toggleBackendFields);
 setInterval(refreshHealth, 10000);
 
-// V0.12.1 · navegação simples · produção guiada
+// V0.12.2 · busca resiliente · produção guiada
 for (const button of document.querySelectorAll('.nav-btn')) {
   button.addEventListener('click', () => {
     const view = button.dataset.view || 'create';

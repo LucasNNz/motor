@@ -19,7 +19,7 @@ class OpenverseProvider:
         # hard-coded commercial+modification for every search, which made the
         # executor stricter than the guide itself. Keep a derivative-friendly
         # default, but allow the TXT to override it or request all open media.
-        license_type = options.get('license_type', 'modification')
+        license_type = options.get('license_type')
         if license_type not in {None, '', 'none', 'all'}:
             params['license_type'] = str(license_type)
         elif str(license_type).lower() == 'all':
@@ -31,11 +31,13 @@ class OpenverseProvider:
                     value = ','.join(str(x) for x in value)
                 params[key] = value
         headers = {
-            'User-Agent': os.environ.get('CORVO_USER_AGENT', 'CorvoImageEngine/0.13 (guided visual reference collector)'),
+            'User-Agent': os.environ.get('CORVO_USER_AGENT', 'CorvoImageEngine/0.12.2 (guided visual reference collector)'),
             'Accept': 'application/json',
         }
-        response = requests.get(self.endpoint, params=params, headers=headers, timeout=60)
-        response.raise_for_status()
+        response = requests.get(self.endpoint, params=params, headers=headers, timeout=45)
+        if not response.ok:
+            body = (response.text or '')[:500].replace('\n', ' ')
+            raise RuntimeError(f'Openverse HTTP {response.status_code}: {body}')
         payload = response.json()
         results = []
         for raw in payload.get('results', []):
@@ -44,6 +46,7 @@ class OpenverseProvider:
                 continue
             results.append({
                 'provider': self.name,
+                'provider_id': raw.get('id'),
                 'title': raw.get('title') or query,
                 'author': raw.get('creator'),
                 'license': raw.get('license'),
@@ -52,6 +55,12 @@ class OpenverseProvider:
                 'source_url': raw.get('foreign_landing_url') or raw.get('detail_url') or image_url,
                 'image_url': image_url,
                 'thumbnail_url': raw.get('thumbnail') or image_url,
+                'download_urls': [u for u in [
+                    (f"https://api.openverse.org/v1/images/{raw.get('id')}/thumb/?full_size=true" if raw.get('id') else None),
+                    (f"https://api.openverse.org/v1/images/{raw.get('id')}/thumb/" if raw.get('id') else None),
+                    raw.get('thumbnail'),
+                    raw.get('url'),
+                ] if u],
                 'width': raw.get('width'),
                 'height': raw.get('height'),
                 'category': raw.get('category'),

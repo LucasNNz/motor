@@ -55,7 +55,7 @@ class CollectorService:
             if not url:
                 rejected.append({'candidate': cand, 'reason': 'sem url de imagem'}); continue
             try:
-                image_bytes = filter_pipeline.download_image(url)
+                image_bytes, downloaded_from, download_attempts = filter_pipeline.download_candidate(cand)
                 inspection = filter_pipeline.inspect(image_bytes)
                 qscore = filter_pipeline.quality_score(inspection['width'], inspection['height'], inspection['transparent'], cand.get('title'), cand.get('tags') or [])
                 rscore = filter_pipeline.relevance_score(query, cand.get('title'), cand.get('tags') or [], concept)
@@ -69,6 +69,7 @@ class CollectorService:
                 metadata = {
                     'width': inspection['width'], 'height': inspection['height'], 'aspect_ratio': inspection['aspect_ratio'],
                     'transparent': inspection['transparent'], 'search': search_metadata or {}, 'filter_reason': reason,
+                    'downloaded_from': downloaded_from, 'download_attempts': download_attempts,
                 }
                 if not ok:
                     result = memory_manager.add_item_from_image(
@@ -110,6 +111,21 @@ class CollectorService:
                 if shortlisted: saved_candidates.append(result['item'])
                 else: saved_rejected.append(result['item'])
 
+        rejection_reasons: dict[str, int] = {}
+        for entry in rejected:
+            reason = str(entry.get('reason') or 'desconhecido')
+            key = reason[:160]
+            rejection_reasons[key] = rejection_reasons.get(key, 0) + 1
+
+        diagnostics = {
+            'provider_errors': list(search['errors']),
+            'candidates_found': len(search['candidates']),
+            'kept_after_filter': len(kept),
+            'saved_count': len(saved_candidates),
+            'saved_rejected_count': len(saved_rejected),
+            'top_rejection_reasons': sorted(rejection_reasons.items(), key=lambda x: x[1], reverse=True)[:8],
+        }
+
         history = {
             'query': query, 'providers': search['providers'], 'results_found': len(search['candidates']),
             'downloaded': len(kept) + len(saved_rejected), 'rejected': len(rejected),
@@ -122,7 +138,7 @@ class CollectorService:
             'query': query, 'concept': concept, 'type': type_name, 'providers': search['providers'], 'errors': search['errors'],
             'filters': cfg, 'candidates_found': len(search['candidates']), 'kept_after_filter': len(kept),
             'rejected_count': len(rejected), 'rejected': rejected[:100], 'saved_count': len(saved_candidates),
-            'saved_items': saved_candidates, 'saved_rejected_count': len(saved_rejected), 'search_history_entry': history,
+            'saved_items': saved_candidates, 'saved_rejected_count': len(saved_rejected), 'search_history_entry': history, 'diagnostics': diagnostics,
             'top_candidates': [{
                 'provider': x['candidate'].get('provider'), 'title': x['candidate'].get('title'),
                 'source_url': x['candidate'].get('source_url'), 'image_url': x['candidate'].get('image_url'),
