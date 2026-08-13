@@ -34,8 +34,10 @@ from .models import (
     MemoryUpdateRequest,
     OperationEvaluationRequest,
     OperationReprocessRequest,
+    BrowserFinalizeRequest,
 )
 from .sdcpp_manager import manager as sdcpp_manager
+from .refiner import decode_base64_image
 from .refiner_benchmark import benchmark_manager
 from .guide_parser import guide_parser
 from .guided_service import guided_service
@@ -51,7 +53,7 @@ STATIC_DIR = BASE_DIR / "static"
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 
-app = FastAPI(title="Corvo Image Engine", version="0.10.1")
+app = FastAPI(title="Corvo Image Engine", version="0.12.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -100,7 +102,7 @@ def get_system_info():
         "diffusers_installed": False,
         "recommended_backend": "composer",
         "notes": [
-            "V0.10 é browser-first: o refinador principal é executado no navegador via WebGPU/WASM. Backends nativos locais são apenas legado opcional."
+            "V0.12 é guia-first e browser-first: o refinador principal é executado no navegador via WebGPU/WASM. Backends nativos locais são apenas legado opcional."
         ],
     }
     try:
@@ -148,14 +150,14 @@ def _prompt_missing_map(prompt: str) -> list[dict[str, str]]:
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "jobs": len(jobs), "version": "0.10.1", **runtime_status()}
+    return {"ok": True, "jobs": len(jobs), "version": "0.12.0", **runtime_status()}
 
 
 @app.get("/api/deployment/status")
 def deployment_status():
     data = runtime_status()
     data.update({
-        "version": "0.10.1",
+        "version": "0.12.0",
         "sdcpp_local_available": not IS_VERCEL,
         "persistent_library": not IS_VERCEL,
         "note": (
@@ -171,7 +173,7 @@ def deployment_status():
 @app.get("/api/browser/config")
 def browser_config():
     return {
-        "version": "0.10.1",
+        "version": "0.12.0",
         "architecture": "browser_first",
         "execution": {
             "preferred": "webgpu",
@@ -389,6 +391,7 @@ def generate_guided(req: GuidedGenerateRequest):
             prompt=req.prompt, guide_text=req.guide_text, width=req.width, height=req.height,
             refiner_name=req.refiner, steps=req.steps, strength=req.strength,
             collect_missing=req.collect_missing, auto_approve_collected=req.auto_approve_collected,
+            allow_candidates=req.use_candidates, providers=req.providers, fast_mvp=req.fast_mvp,
         )
         image = result.pop('image')
         result['image_base64'] = image_to_base64_png(image)
@@ -439,6 +442,27 @@ def operation_reprocess(operation_id: str, req: OperationReprocessRequest):
         return result
     except KeyError:
         raise HTTPException(status_code=404, detail='Operação pai ou resultado não encontrado')
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/operations/{operation_id}/browser-finalize")
+def operation_browser_finalize(operation_id: str, req: BrowserFinalizeRequest):
+    try:
+        operation_manager.status(operation_id)
+        image = decode_base64_image(req.image_base64)
+        operation_manager.save_image(operation_id, 'etapas/depois_refinamento.png', image)
+        operation_manager.save_image(operation_id, 'resultado_final.png', image)
+        existing = operation_manager.read_json(operation_id, 'logs/refinador.json', {}) or {}
+        merged = {**existing, 'browser_finalized': True, 'browser': req.refiner_metadata}
+        operation_manager.write_json(operation_id, 'logs/refinador.json', merged)
+        operation_manager.write_json(operation_id, 'logs/resultado_cliente.json', {
+            'browser_finalized': True, 'width': image.width, 'height': image.height,
+            'metadata': req.refiner_metadata, 'at': time.time(),
+        })
+        return {'ok': True, 'operation_id': operation_id, 'export_url': f'/api/operations/{operation_id}/export'}
+    except KeyError:
+        raise HTTPException(status_code=404, detail='Operação não encontrada')
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

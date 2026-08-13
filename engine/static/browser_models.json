@@ -1,6 +1,6 @@
 {
   "schema": "corvo.browser_models.v1",
-  "version": "0.10.1",
+  "version": "0.12.0",
   "default": "swin2sr_light_x2",
   "models": [
     {
@@ -18,7 +18,7 @@
         "pose_control": false,
         "regional_inpainting": false
       },
-      "role": "MVP que prova inferência de IA no navegador sem instalação local"
+      "role": "enhancer browser do MVP; execução guiada principal acontece antes, via TXT + biblioteca + Composer"
     }
   ],
   "future_provider_contract": {

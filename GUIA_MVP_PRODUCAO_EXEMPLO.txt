@@ -1,0 +1,45 @@
+[SCENE]
+subject=garfo
+object=garfo
+style=2d_semirrealista
+camera=frontal
+
+[SEARCH_OBJECT]
+provider=openverse
+query=garfo isolado fundo branco alta resolucao
+collect_limit=20
+keep_limit=4
+
+[SEARCH_BACKGROUND]
+providers=wikimedia_commons,openverse
+query=fundo claro minimalista suave sem texto
+collect_limit=16
+keep_limit=3
+
+[SEARCH_LIGHTING]
+query=iluminacao de estudio suave objeto fundo claro
+temperature=neutral
+collect_limit=8
+keep_limit=2
+
+[FILTER]
+min_resolution=512
+reject_text=true
+reject_logos=true
+reject_watermarks=true
+remove_duplicates=true
+remove_near_duplicates=true
+quality_threshold=0.55
+similarity_threshold=0.82
+
+[COMPOSITION]
+subject_x=50%
+subject_y=50%
+subject_scale=62%
+shadow=true
+
+[RENDER]
+harmonize_lighting=true
+harmonize_style=true
+preserve_scene_structure=high
+strength=normal

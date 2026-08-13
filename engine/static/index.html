@@ -35,7 +35,7 @@
 <section class="panel browser-panel view-panel view-advanced technical-panel">
 <div class="engine-head">
 <div>
-<h2>Refinador no Navegador · V0.11</h2>
+<h2>Refinador no Navegador · V0.12</h2>
 <p class="muted">A IA roda no computador que abriu a página. Não exige instalar Python, CUDA, SD.CPP ou servidor local.</p>
 </div>
 <div class="badge" id="browserRuntimeBadge">Detectando navegador...</div>
@@ -109,14 +109,24 @@
 </div>
 </div>
 <div class="setup-note">
-<strong>MVP V0.10.1:</strong> o refinador do MVP usa um caminho híbrido: executa IA no navegador e valida se houve mudança real. Quando a saída da IA muda pouco, o sistema completa com melhoria visual local antes de liberar o resultado. Isso mantém o fluxo simples enquanto avançamos para um refinador generativo mais forte.
+<strong>MVP V0.12:</strong> o refinador do MVP usa um caminho híbrido: executa IA no navegador e valida se houve mudança real. Quando a saída da IA muda pouco, o sistema completa com melhoria visual local antes de liberar o resultado. Isso mantém o fluxo simples enquanto avançamos para um refinador generativo mais forte.
       </div>
 </section>
 <main class="workspace-root">
 <section class="panel view-panel view-create primary-workspace">
-<h2>Criar imagem</h2><p class="section-intro">Descreva a imagem. O sistema monta e refina automaticamente no navegador, sem instalar nada.</p><div class="simple-engine-strip"><span class="status-dot"></span><span id="simpleAiStatus">IA local será preparada automaticamente</span></div>
+<h2>Criar imagem</h2><p class="section-intro">Envie o prompt e o guia. O Corvo executa busca → seleção → montagem → refino, sem tentar adivinhar o plano.</p><div class="simple-engine-strip"><span class="status-dot"></span><span id="simpleAiStatus">IA local será preparada automaticamente</span></div>
 <label>O que você quer criar?</label>
-<textarea id="singlePrompt" placeholder="Descreva a imagem..." rows="6">UM GARFO COMO ELEMENTO PRINCIPAL, CENTRALIZADO, BEM DESTACADO, ESTILO ILUSTRAÇÃO 2D SEMIRREALISTA E LIMPA, FUNDO CLARO E SIMPLES, COMPOSIÇÃO OBJETIVA E FÁCIL DE ENTENDER, BOA LEITURA VISUAL PARA QUIZ, IMAGEM LIMPA, SEM TÍTULO, SEM TEXTO, SEM LOGOS E SEM MARCA-D'ÁGUA.</textarea>
+<textarea id="singlePrompt" placeholder="Descreva a imagem..." rows="5">UM GARFO COMO ELEMENTO PRINCIPAL, CENTRALIZADO, BEM DESTACADO, ESTILO ILUSTRAÇÃO 2D SEMIRREALISTA E LIMPA, FUNDO CLARO E SIMPLES, COMPOSIÇÃO OBJETIVA E FÁCIL DE ENTENDER, BOA LEITURA VISUAL PARA QUIZ, IMAGEM LIMPA, SEM TÍTULO, SEM TEXTO, SEM LOGOS E SEM MARCA-D'ÁGUA.</textarea>
+<div class="guide-input-card">
+  <div class="guide-input-head"><strong>Guia TXT da imagem</strong><span class="mini-pill">MVP GUIADO</span></div>
+  <p class="muted compact-copy">O guia diz o que buscar, como montar e o que preservar/refinar. Na produção, cada prompt deve vir com seu guia.</p>
+  <input accept=".txt,text/plain" id="productionGuideFile" type="file"/>
+  <div class="file-info" id="productionGuideInfo">Nenhum guia carregado · sem guia o sistema usa apenas o modo compatibilidade.</div>
+  <details class="manual-guide-details">
+    <summary>Colar guia manualmente</summary>
+    <textarea id="productionGuideText" placeholder="[SCENE]&#10;...&#10;&#10;[SEARCH_OBJECT]&#10;query=...&#10;&#10;[COMPOSITION]&#10;...&#10;&#10;[RENDER]&#10;..." rows="10"></textarea>
+  </details>
+</div>
 <div class="inline-fields single-config advanced-only">
 <div>
 <label>Backend</label>
@@ -152,7 +162,7 @@
 </div>
 <div class="meta" id="singleMeta"></div>
 <div class="plan-box empty advanced-only" id="singlePlan">O plano de composição aparecerá aqui.</div>
-<div class="result-toolbar"><strong>Resultado</strong><a class="ghost disabled small-action" download="corvo_imagem.png" href="#" id="singleDownloadLink">Baixar PNG</a></div><div class="preview-box"><img alt="Preview" id="singlePreview"/></div>
+<div class="result-toolbar"><strong>Resultado</strong><div class="actions compact"><a class="ghost disabled small-action" href="#" id="singleOperationExportLink">Exportar operação</a><a class="ghost disabled small-action" download="corvo_imagem.png" href="#" id="singleDownloadLink">Baixar PNG</a></div></div><div class="preview-box"><img alt="Preview" id="singlePreview"/></div>
 </section>
 <section class="panel view-panel view-batch primary-workspace">
 <h2>Gerar lote</h2><p class="section-intro">Importe um TXT ou cole os prompts. O navegador processa, refina e monta o ZIP final.</p>
@@ -343,7 +353,7 @@ feather=0.10</textarea>
 <div class="engine-head">
 <div>
 <h2>Benchmark do Refinador Legado</h2>
-<p class="muted">Mantido apenas para comparar com o caminho antigo local. O benchmark principal da V0.10 está no painel Browser/WebGPU acima.</p>
+<p class="muted">Mantido apenas para comparar com o caminho antigo local. O benchmark browser está no painel Browser/WebGPU acima.</p>
 </div>
 <div class="badge" id="refinerStatusBadge">Verificando refinador...</div>
 </div>
@@ -382,7 +392,7 @@ UM CACHORRO FELIZ EM UM PARQUE, COMPOSIÇÃO LIMPA PARA QUIZ, ILUSTRAÇÃO 2D SE
 <button class="ghost" id="cancelBenchmarkBtn">Cancelar benchmark</button>
 <button class="ghost" id="refreshRefinerBtn">Atualizar status</button>
 </div>
-<div class="meta" id="benchmarkMeta">LEGADO: estes testes exigem instalação local. Para a V0.10, use o benchmark WebGPU do painel Browser acima.</div>
+<div class="meta" id="benchmarkMeta">LEGADO: estes testes exigem instalação local. Para diagnóstico browser, use o benchmark WebGPU do painel Browser acima.</div>
 <div class="benchmark-verdict empty" id="benchmarkVerdict">Nenhum benchmark executado.</div>
 <div class="queue-table-wrap benchmark-table-wrap">
 <table class="queue-table">
@@ -470,7 +480,7 @@ UM CACHORRO FELIZ EM UM PARQUE, COMPOSIÇÃO LIMPA PARA QUIZ, ILUSTRAÇÃO 2D SE
 </div>
 </section>
 <section class="panel experimental-panel view-panel view-advanced technical-panel">
-<h2>Arquitetura V0.10.1 · Browser-first</h2>
+<h2>Arquitetura V0.12 · Guia-first + Browser-first</h2>
 <div class="roadmap-grid">
 <div><strong>VERCEL</strong><span>Distribui o aplicativo e os arquivos; não executa o refinador pesado.</span></div>
 <div><strong>NAVEGADOR</strong><span>Detecta WebGPU, baixa/cacheia o modelo e executa inferência localmente.</span></div>

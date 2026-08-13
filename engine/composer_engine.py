@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
-from PIL import Image, ImageEnhance, ImageFilter
+from PIL import Image, ImageEnhance, ImageFilter, ImageChops
 
 from .memory_manager import memory_manager
 from .seed_visual_bank import build_bank
@@ -319,6 +319,26 @@ class ComposerEngine:
         scale = min(pw / item.width, ph / item.height)
         target = (max(1, int(item.width * scale)), max(1, int(item.height * scale)))
         item = item.resize(target, Image.Resampling.LANCZOS)
+        # MVP cutout assist: if the source has no alpha but its four corners are nearly
+        # the same color, treat that border color as a removable studio/background color.
+        # This makes guided searches such as "objeto isolado em fundo branco" useful
+        # without requiring a separate segmentation model.
+        alpha_extrema = item.getchannel("A").getextrema()
+        if alpha_extrema == (255, 255) and item.width > 12 and item.height > 12:
+            rgb_item = item.convert("RGB")
+            corners = [
+                rgb_item.getpixel((1, 1)), rgb_item.getpixel((rgb_item.width - 2, 1)),
+                rgb_item.getpixel((1, rgb_item.height - 2)), rgb_item.getpixel((rgb_item.width - 2, rgb_item.height - 2)),
+            ]
+            spread = max(max(c[i] for c in corners) - min(c[i] for c in corners) for i in range(3))
+            if spread <= 34:
+                bg_color = tuple(sum(c[i] for c in corners) // len(corners) for i in range(3))
+                diff = ImageChops.difference(rgb_item, Image.new("RGB", rgb_item.size, bg_color))
+                r, g, b = diff.split()
+                magnitude = ImageChops.lighter(ImageChops.lighter(r, g), b)
+                mask = magnitude.point(lambda v: 0 if v < 18 else (255 if v > 52 else int((v - 18) / 34 * 255)))
+                mask = mask.filter(ImageFilter.GaussianBlur(radius=0.7))
+                item.putalpha(mask)
         dx = px + (pw - item.width) // 2
         dy = py + (ph - item.height) // 2
         if shadow:
@@ -330,18 +350,34 @@ class ComposerEngine:
             base.alpha_composite(rgb, (dx + max(2, int(5 * sx)), dy + max(2, int(7 * sy))))
         base.alpha_composite(item, (dx, dy))
 
-    def _compose_object_only(self, plan: Plan, width: int, height: int) -> Image.Image:
+    @staticmethod
+    def _fraction(value, default: float) -> float:
+        if value is None:
+            return default
+        try:
+            v = float(value)
+            if v > 1.0:
+                v /= 100.0
+            return max(0.0, min(1.5, v))
+        except Exception:
+            return default
+
+    def _compose_object_only(self, plan: Plan, width: int, height: int, composition_rules: Optional[dict[str, Any]] = None) -> Image.Image:
         bg = Image.open(self.bank.asset_path(plan.background)) if plan.background else Image.new("RGB", (512, 512), (245, 248, 252))
         base = self._fit_background(bg, width, height)
         if plan.object:
             obj = Image.open(self.bank.asset_path(plan.object))
-            size = int(min(width, height) * 0.62)
-            x = (width - size) // 2
-            y = (height - size) // 2
+            rules = composition_rules or {}
+            scale = self._fraction(rules.get('object_scale', rules.get('subject_scale')), 0.62)
+            cx = self._fraction(rules.get('object_x', rules.get('subject_x')), 0.50)
+            cy = self._fraction(rules.get('object_y', rules.get('subject_y')), 0.50)
+            size = max(32, int(min(width, height) * scale))
+            x = int(width * cx - size / 2)
+            y = int(height * cy - size / 2)
             sx = 512 / width
             sy = 512 / height
             box = [int(x * sx), int(y * sy), int(size * sx), int(size * sy)]
-            self._paste_box(base, obj, box, shadow=True)
+            self._paste_box(base, obj, box, shadow=bool(rules.get('shadow', True)))
         return base
 
     def _compose_character_scene(self, plan: Plan, width: int, height: int) -> Image.Image:
@@ -383,9 +419,10 @@ class ComposerEngine:
                 parts.append(str(value))
         return normalize_text(' '.join(parts))
 
-    def _guided_asset(self, category: str, terms: str, default_id: Optional[str] = None):
-        # First use the auditable approved library, then fall back to the demo bank.
-        mem = memory_manager.search_best(concept=terms or category, type_name=category, limit=1, approved_only=True)
+    def _guided_asset(self, category: str, terms: str, default_id: Optional[str] = None, allow_candidates: bool = False):
+        # Guided production may use shortlisted candidates immediately for this operation,
+        # while keeping their library state auditable as candidates.
+        mem = memory_manager.search_best(concept=terms or category, type_name=category, limit=1, approved_only=not allow_candidates)
         if mem:
             item = mem[0]
             return {
@@ -400,7 +437,7 @@ class ComposerEngine:
             return None
         return asset
 
-    def plan_from_guide(self, guide) -> tuple[Plan, dict[str, Any]]:
+    def plan_from_guide(self, guide, *, allow_candidates: bool = False) -> tuple[Plan, dict[str, Any]]:
         # `guide` can be ParsedGuide or a plain dictionary produced by it.
         first = guide.first if hasattr(guide, 'first') else lambda name: ((guide.get('sections', {}).get(name.upper()) or [{}])[0])
         scene = first('SCENE') or {}
@@ -430,12 +467,15 @@ class ComposerEngine:
         cloth_terms = self._guide_terms(cloth_block.get('query'), cloth_block.get('style'), char_terms)
         obj_terms = self._guide_terms(obj_block.get('query'), obj_block.get('object'), scene.get('object'))
 
-        has_character = bool(char_terms or scene.get('subject') or pose_terms)
-        background = self._guided_asset('background', bg_terms, default_id='bg_plain_light')
-        pose = self._guided_asset('pose', pose_terms, default_id='pose_standing_center') if has_character else None
-        face = self._guided_asset('face', face_terms, default_id='face_neutral') if has_character else None
-        outfit = self._guided_asset('outfit', cloth_terms or char_terms) if has_character else None
-        obj = self._guided_asset('object', obj_terms) if obj_terms else None
+        has_character = bool(
+            char_block or scene.get('visual_reference') or scene.get('character') or pose_terms
+            or str(scene.get('subject_type') or '').lower() in {'character', 'personagem', 'person'}
+        )
+        background = self._guided_asset('background', bg_terms, default_id='bg_plain_light', allow_candidates=allow_candidates)
+        pose = self._guided_asset('pose', pose_terms, default_id='pose_standing_center', allow_candidates=allow_candidates) if has_character else None
+        face = self._guided_asset('face', face_terms, default_id='face_neutral', allow_candidates=allow_candidates) if has_character else None
+        outfit = self._guided_asset('outfit', cloth_terms or char_terms, allow_candidates=allow_candidates) if has_character else None
+        obj = self._guided_asset('object', obj_terms, allow_candidates=allow_candidates) if obj_terms else None
         confs = [0.7 if x else 0 for x in [background, pose, face, outfit, obj] if x is not None]
         plan = Plan(
             prompt='[GUIDED_EXECUTION]', normalized_prompt='guided_execution', background=background, pose=pose,
@@ -443,7 +483,7 @@ class ComposerEngine:
             mode='character_scene' if has_character else 'object_only', confidence=sum(confs)/len(confs) if confs else 0.0,
         )
         extra = {
-            'scene': scene, 'composition_rules': comp, 'searches': searches,
+            'scene': scene, 'composition_rules': comp, 'searches': searches, 'allow_candidates': allow_candidates,
             'lighting_request': light_block, 'camera_request': camera_block,
             'selected': {
                 'background': background.get('id') if background else None,
@@ -455,13 +495,13 @@ class ComposerEngine:
         }
         return plan, extra
 
-    def generate_guided(self, guide, width: int, height: int) -> Image.Image:
+    def generate_guided(self, guide, width: int, height: int, *, allow_candidates: bool = False) -> Image.Image:
         self.bank.reload()
-        plan, extra = self.plan_from_guide(guide)
+        plan, extra = self.plan_from_guide(guide, allow_candidates=allow_candidates)
         if plan.mode == 'character_scene':
             image = self._compose_character_scene(plan, width, height)
         else:
-            image = self._compose_object_only(plan, width, height)
+            image = self._compose_object_only(plan, width, height, extra.get('composition_rules'))
         # Lightweight deterministic lighting harmonization from the guide.
         light = extra.get('lighting_request') or {}
         temp = normalize_text(str(light.get('temperature') or ''))

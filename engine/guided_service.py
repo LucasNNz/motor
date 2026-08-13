@@ -31,6 +31,33 @@ class GuidedExecutionService:
             'block': block,
         }
 
+    @staticmethod
+    def _providers_for_spec(block: dict[str, Any], defaults: list[str]) -> list[str]:
+        value = block.get('providers', block.get('provider'))
+        if not value:
+            return list(defaults)
+        if isinstance(value, str):
+            values = [x.strip() for x in value.split(',') if x.strip()]
+        elif isinstance(value, (list, tuple)):
+            values = [str(x).strip() for x in value if str(x).strip()]
+        else:
+            values = [str(value).strip()]
+        aliases = {
+            'wikimedia': 'wikimedia_commons', 'commons': 'wikimedia_commons',
+            'open_verse': 'openverse', 'open-verse': 'openverse',
+        }
+        return [aliases.get(x.lower(), x.lower()) for x in values] or list(defaults)
+
+    @staticmethod
+    def _effective_limits(spec: dict[str, Any], *, fast_mvp: bool) -> tuple[int, int]:
+        collect_limit = max(1, int(spec.get('collect_limit') or 40))
+        keep_limit = max(1, int(spec.get('keep_limit') or 10))
+        if fast_mvp:
+            # Production MVP prioritizes latency. The requested values remain in logs.
+            collect_limit = min(collect_limit, 16)
+            keep_limit = min(keep_limit, 4)
+        return collect_limit, min(keep_limit, collect_limit)
+
     def _all_search_specs(self, guide: ParsedGuide) -> list[dict[str, Any]]:
         specs: list[dict[str, Any]] = []
         explicit_types: set[str] = set()
@@ -60,7 +87,7 @@ class GuidedExecutionService:
         # If a component exists in SCENE but has no explicit SEARCH block, create a minimal directed search.
         scene = guide.first('SCENE') or {}
         scene_specs = [
-            ('character', scene.get('visual_reference') or scene.get('subject'), 'reference_target'),
+            ('character', scene.get('visual_reference') or scene.get('character'), 'reference_target'),
             ('pose', scene.get('action'), 'pose'),
             ('face', scene.get('emotion'), 'expression'),
             ('object', scene.get('object'), 'object'),
@@ -76,29 +103,37 @@ class GuidedExecutionService:
             specs.append(spec); explicit_types.add(type_name)
         return specs
 
-    def collect_from_guide(self, guide_text: str, *, providers: list[str], auto_approve: bool = False) -> dict[str, Any]:
+    def collect_from_guide(self, guide_text: str, *, providers: list[str], auto_approve: bool = False, fast_mvp: bool = False) -> dict[str, Any]:
         guide = guide_parser.parse(guide_text)
         filters = self._filter_config(guide)
         results = []
         for spec in self._all_search_specs(guide):
             section = spec['section']; block = spec['block']
+            spec_providers = self._providers_for_spec(block, providers)
+            collect_limit, keep_limit = self._effective_limits(spec, fast_mvp=fast_mvp)
             result = collector_service.collect(
-                query=spec['query'], type_name=spec['type'], concept=spec['concept'], providers=providers,
-                per_provider=min(50, max(8, spec['collect_limit'] // max(1, len(providers)))),
-                save_limit=spec['keep_limit'], keep_limit=spec['keep_limit'], collect_limit=spec['collect_limit'],
-                auto_approve=auto_approve, filters=filters, search_metadata={'section': section, **block},
+                query=spec['query'], type_name=spec['type'], concept=spec['concept'], providers=spec_providers,
+                per_provider=min(24, max(4, collect_limit // max(1, len(spec_providers)))),
+                save_limit=keep_limit, keep_limit=keep_limit, collect_limit=collect_limit,
+                auto_approve=auto_approve, filters=filters,
+                search_metadata={
+                    'section': section, **block, 'providers_effective': spec_providers,
+                    'collect_limit_requested': spec['collect_limit'], 'collect_limit_effective': collect_limit,
+                    'keep_limit_requested': spec['keep_limit'], 'keep_limit_effective': keep_limit,
+                    'fast_mvp': fast_mvp,
+                },
             )
-            results.append({'spec': spec, 'result': result})
+            results.append({'spec': spec, 'providers': spec_providers, 'effective_collect_limit': collect_limit, 'effective_keep_limit': keep_limit, 'result': result})
         composer_engine.reload_memory()
-        return {'guide': guide.as_dict(), 'filters': filters, 'results': results, 'memory': memory_manager.status()}
+        return {'guide': guide.as_dict(), 'filters': filters, 'results': results, 'memory': memory_manager.status(), 'fast_mvp': fast_mvp}
 
-    def _should_collect(self, guide: ParsedGuide) -> bool:
+    def _should_collect(self, guide: ParsedGuide, *, allow_candidates: bool = False) -> bool:
         for spec in self._all_search_specs(guide):
-            if not memory_manager.search_best(spec['concept'], spec['type'], limit=1, approved_only=True):
+            if not memory_manager.search_best(spec['concept'], spec['type'], limit=1, approved_only=not allow_candidates):
                 return True
         return False
 
-    def _selected_references(self, guide: ParsedGuide, composition: dict[str, Any]) -> list[dict[str, Any]]:
+    def _selected_references(self, guide: ParsedGuide, composition: dict[str, Any], *, allow_candidates: bool = False) -> list[dict[str, Any]]:
         refs: dict[str, dict[str, Any]] = {}
         plan = (composition or {}).get('plan') or {}
         for label in ['background', 'pose', 'face', 'outfit', 'object']:
@@ -107,13 +142,13 @@ class GuidedExecutionService:
             if item_id:
                 refs[f'composer_{label}'] = {'label': f'composer_{label}', 'id': item_id, 'source': item.get('source'), 'file': item.get('file')}
         for spec in self._all_search_specs(guide):
-            found = memory_manager.search_best(spec['concept'], spec['type'], limit=1, approved_only=True)
+            found = memory_manager.search_best(spec['concept'], spec['type'], limit=1, approved_only=not allow_candidates)
             if found:
                 item = found[0]
                 refs[f"guide_{spec['type']}"] = {
                     'label': f"guide_{spec['type']}", 'id': item['id'], 'source': item.get('source'),
                     'file': item.get('local_path'), 'concept': item.get('concept'), 'query': spec['query'],
-                    'preferred': item.get('preferred'), 'success_rate': item.get('success_rate', 0),
+                    'preferred': item.get('preferred'), 'success_rate': item.get('success_rate', 0), 'status': item.get('status'),
                 }
         return list(refs.values())
 
@@ -132,32 +167,34 @@ class GuidedExecutionService:
 
     def execute(self, *, prompt: str, guide_text: str, width: int, height: int, refiner_name: str = 'none',
                 steps: int = 3, strength: float = 0.24, collect_missing: bool = False,
-                auto_approve_collected: bool = False) -> dict[str, Any]:
+                auto_approve_collected: bool = False, allow_candidates: bool = False,
+                providers: list[str] | None = None, fast_mvp: bool = False) -> dict[str, Any]:
         guide = guide_parser.parse(guide_text)
+        providers = list(providers or ['openverse', 'wikimedia_commons'])
         operation_id = operation_manager.create(prompt=prompt, guide_text=guide_text)
         started = time.perf_counter()
         search_log: list[dict[str, Any]] = []
         errors: list[dict[str, Any]] = []
         try:
-            if collect_missing and self._should_collect(guide):
+            if collect_missing and self._should_collect(guide, allow_candidates=allow_candidates):
                 collect_started = time.perf_counter()
-                collected = self.collect_from_guide(guide_text, providers=['openverse', 'wikimedia_commons'], auto_approve=auto_approve_collected)
+                collected = self.collect_from_guide(guide_text, providers=providers, auto_approve=auto_approve_collected, fast_mvp=fast_mvp)
                 search_log = collected['results']
                 collect_ms = int((time.perf_counter() - collect_started) * 1000)
             else:
                 collect_ms = 0
                 for spec in self._all_search_specs(guide):
-                    found = memory_manager.search_best(spec['concept'], spec['type'], limit=10, approved_only=True)
-                    search_log.append({'spec': spec, 'library_matches': [x['id'] for x in found]})
+                    found = memory_manager.search_best(spec['concept'], spec['type'], limit=10, approved_only=not allow_candidates)
+                    search_log.append({'spec': spec, 'library_matches': [{'id': x['id'], 'status': x.get('status')} for x in found]})
 
             compose_started = time.perf_counter()
-            base = composer_engine.generate_guided(guide, width, height)
+            base = composer_engine.generate_guided(guide, width, height, allow_candidates=allow_candidates)
             composer_ms = int((time.perf_counter() - compose_started) * 1000)
             composition = composer_engine.last_info
             operation_manager.save_image(operation_id, 'etapas/composicao_base.png', base)
             operation_manager.save_image(operation_id, 'etapas/antes_refinamento.png', base)
 
-            references = self._selected_references(guide, composition)
+            references = self._selected_references(guide, composition, allow_candidates=allow_candidates)
             copied = []
             for ref in references:
                 item = memory_manager.by_id.get(ref.get('id'))
@@ -201,6 +238,11 @@ class GuidedExecutionService:
             library_ids = [x.get('id') for x in copied if x.get('id') in memory_manager.by_id]
             memory_manager.register_operation_use(library_ids, operation_id)
             operation_manager.write_json(operation_id, 'logs/composicao.json', composition)
+            operation_manager.write_json(operation_id, 'logs/execucao.json', {
+                'mode': 'guided_fast_mvp' if fast_mvp else 'guided',
+                'allow_candidates': allow_candidates, 'auto_approve_collected': auto_approve_collected,
+                'providers_default': providers, 'collect_missing': collect_missing,
+            })
             operation_manager.write_json(operation_id, 'logs/refinador.json', refiner_log)
             operation_manager.write_json(operation_id, 'logs/condicionamento.json', conditioning_log)
             operation_manager.write_json(operation_id, 'logs/tempos.json', {
@@ -212,7 +254,8 @@ class GuidedExecutionService:
             return {
                 'operation_id': operation_id, 'image': final, 'composition': composition, 'references': copied,
                 'timings': {'collect_ms': collect_ms, 'composer_ms': composer_ms, 'refiner_ms': refine_ms, 'total_ms': total_ms},
-                'refiner': refiner_log, 'guide': guide.as_dict(),
+                'refiner': refiner_log, 'guide': guide.as_dict(), 'searches': search_log,
+                'execution': {'allow_candidates': allow_candidates, 'fast_mvp': fast_mvp, 'providers': providers},
             }
         except Exception as exc:
             errors.append({'stage': 'guided_execution', 'error': str(exc), 'at': time.time()})

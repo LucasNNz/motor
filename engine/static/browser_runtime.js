@@ -215,6 +215,47 @@ async function listRuns(limit = 20) {
   });
 }
 
+function parseGuideDirectives(text) {
+  const sections = {};
+  let current = null;
+  for (const rawLine of String(text || '').replace(/\r/g, '').split('\n')) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#') || line.startsWith(';')) continue;
+    const section = line.match(/^\[([^\]]+)\]$/);
+    if (section) {
+      current = section[1].trim().toUpperCase();
+      sections[current] = sections[current] || {};
+      continue;
+    }
+    if (!current || !line.includes('=')) continue;
+    const idx = line.indexOf('=');
+    sections[current][line.slice(0, idx).trim().toLowerCase()] = line.slice(idx + 1).trim();
+  }
+  const render = { ...(sections.RENDER || {}), ...(sections.REFINE || {}) };
+  const lighting = sections.SEARCH_LIGHTING || sections.LIGHTING || {};
+  const truthy = (v) => ['true', 'yes', 'sim', '1', 'high', 'alto', 'alta'].includes(String(v || '').toLowerCase());
+  let strength = String(render.strength || render.refine_strength || render.intensity || 'normal').toLowerCase();
+  if (!['light', 'normal', 'strong'].includes(strength)) {
+    const n = Number(strength);
+    strength = Number.isFinite(n) ? (n >= 0.7 ? 'strong' : n <= 0.3 ? 'light' : 'normal') : 'normal';
+  }
+  if (truthy(render.harmonize_lighting) || truthy(render.harmonize_style)) {
+    if (strength === 'light') strength = 'normal';
+  }
+  const unsupported = [];
+  for (const key of ['redraw_connections', 'fix_anatomy', 'preserve_pose', 'preserve_character_reference']) {
+    if (truthy(render[key]) || String(render[key] || '').toLowerCase() === 'high') unsupported.push(key);
+  }
+  return {
+    strength,
+    temperature: String(lighting.temperature || render.temperature || '').toLowerCase(),
+    render,
+    lighting,
+    unsupported,
+    sections: Object.keys(sections),
+  };
+}
+
 class CorvoBrowserRuntime extends EventTarget {
   constructor() {
     super();
@@ -410,7 +451,7 @@ class CorvoBrowserRuntime extends EventTarget {
     }
   }
 
-  async refine(source, { device = 'auto', model = DEFAULT_MODEL, maxInputDimension = null, preserveOutputSize = true, ensureVisibleChange = true } = {}) {
+  async refine(source, { device = 'auto', model = DEFAULT_MODEL, maxInputDimension = null, preserveOutputSize = true, ensureVisibleChange = true, guideText = '', referenceCount = 0 } = {}) {
     const originalBlob = await sourceToBlob(source);
     const original = await blobDimensions(originalBlob);
     const originalCanvas = await blobToCanvas(originalBlob);
@@ -422,6 +463,7 @@ class CorvoBrowserRuntime extends EventTarget {
     const inputMax = Number(maxInputDimension || recommendedMax);
     const prepared = await resizeBlob(originalBlob, inputMax);
     const started = performance.now();
+    const guideDirectives = parseGuideDirectives(guideText);
 
     let effectiveDevice = mode;
     let modelCanvas = null;
@@ -455,7 +497,10 @@ class CorvoBrowserRuntime extends EventTarget {
       this.emit('inference-progress', { status: 'fallback', message: `${note} Aplicando melhoria visual local...` });
     }
 
-    let canvas = modelCanvas ? enhanceCanvas(modelCanvas, { strength: modelDifference < 0.01 ? 'strong' : 'normal' }) : enhanceCanvas(originalCanvas, { strength: 'strong' });
+    const guidedStrength = guideDirectives.strength || 'normal';
+    let canvas = modelCanvas
+      ? enhanceCanvas(modelCanvas, { strength: modelDifference < 0.01 ? 'strong' : guidedStrength })
+      : enhanceCanvas(originalCanvas, { strength: guidedStrength === 'light' ? 'normal' : guidedStrength });
     let changeScore = measureCanvasDifference(originalCanvas, canvas);
 
     if (modelCanvas && changeScore < modelDifference) {
@@ -504,6 +549,12 @@ class CorvoBrowserRuntime extends EventTarget {
       change_score: Number(changeScore.toFixed(4)),
       model_difference: Number(modelDifference.toFixed(4)),
       note,
+      guided: Boolean(guideText),
+      guide_sections: guideDirectives.sections,
+      guide_refine_strength: guideDirectives.strength,
+      guide_temperature: guideDirectives.temperature,
+      reference_count: Number(referenceCount || 0),
+      unsupported_guided_directives: guideDirectives.unsupported,
     };
     await saveRun(run).catch(() => {});
     this.lastResult = { ...run, dataUrl: encoded.dataUrl, blob: encoded.blob };

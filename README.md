@@ -1,152 +1,36 @@
-# Corvo Image Engine V0.10.1 — Browser-first · Interface simples
+# Corvo Image Engine V0.12 — MVP de Produção Guiada
 
-**Mudança de produto:** a interface principal agora é produção-first, com quatro áreas: Criar, Lote, Biblioteca e Avançado. Backend, WebGPU/WASM, modelos, benchmark, execução guiada e controles legados ficam fora do fluxo principal.
+A entrada principal agora é **PROMPT + GUIA TXT**. O Engine não tenta substituir a IA que planejou a imagem: ele executa as instruções do guia.
 
-# Corvo Image Engine V0.10 — Browser-first + WebGPU
+## Fluxo principal
 
-A V0.10 muda a arquitetura principal do projeto.
+PROMPT + GUIA TXT → buscas dirigidas → filtros → biblioteca auditável → seleção → composição → refinador browser → PNG → operação exportável.
 
-## Objetivo
+## Uso rápido
 
-Abrir o Corvo Image Engine no navegador e usar a máquina do usuário para o refinamento de IA, sem instalar um backend separado em cada PC.
+1. Abra o app.
+2. Em **Criar**, informe o prompt.
+3. Carregue o TXT guia da imagem.
+4. Escolha o formato.
+5. Clique **Gerar imagem**.
+6. Baixe o PNG; se quiser auditoria, use **Exportar operação**.
 
-```text
-VERCEL / WEB
-   ↓
-NAVEGADOR
-   ↓
-WEBGPU (preferido) ou WASM (fallback)
-   ↓
-REFINADOR DE IA
-   ↓
-PNG / ZIP LOCAL
-```
+## Guia
 
-O Vercel distribui a aplicação. A inferência pesada do refinador browser não acontece na Serverless Function.
+O parser entende, entre outros: `[SCENE]`, `[SEARCH_CHARACTER]`, `[SEARCH_POSE]`, `[SEARCH_BACKGROUND]`, `[SEARCH_OBJECT]`, `[SEARCH_LIGHTING]`, `[FILTER]`, `[COMPOSITION]`, `[RENDER]`, `[REPROCESS]` e `[FIX]`.
 
-## Uso
+Cada bloco `SEARCH_*` pode informar `provider=` ou `providers=`. Exemplos atuais: `openverse` e `wikimedia_commons`.
 
-### No Vercel
+## fast_mvp
 
-Faça o deploy normalmente. Abra a página em HTTPS.
+No fluxo principal o sistema usa uma política rápida de coleta para provar produção sem esperar centenas de downloads por componente. O pedido original e os limites efetivamente usados ficam registrados no histórico da busca.
 
-No topo aparecerá **Refinador no Navegador**.
+## Biblioteca
 
-1. O sistema detecta WebGPU automaticamente.
-2. Clique **Preparar refinador**.
-3. No primeiro uso o runtime/modelo é baixado.
-4. O navegador usa Cache API quando disponível.
-5. Escolha uma imagem ou gere uma imagem pelo Composer.
-6. Clique **Refinar no navegador**.
-7. Baixe o PNG diretamente do browser.
+Referências novas ficam como `candidates` por padrão. No modo de produção guiada elas podem ser usadas imediatamente naquela operação sem serem promovidas permanentemente a `approved`.
 
-### Geração única
+## Refinador
 
-O backend padrão é:
+O refinador principal continua rodando no navegador. A V0.12 passa as diretivas do `[RENDER]` para o runtime browser e registra instruções que o modelo atual ainda não consegue cumprir generativamente (por exemplo anatomia/redesenho).
 
-```text
-COMPOSER + BROWSER AI
-```
-
-Fluxo:
-
-```text
-prompt
-→ Composer
-→ imagem-base
-→ refinador browser
-→ preview final
-```
-
-### Lote por TXT
-
-O backend padrão do lote é:
-
-```text
-COMPOSER + BROWSER AI · CLIENTE
-```
-
-Cada imagem é composta e depois refinada sequencialmente no navegador. Ao final, o próprio browser cria um ZIP contendo PNGs + `manifest_browser.json`.
-
-### Execução guiada
-
-O refinador padrão é:
-
-```text
-BROWSER AI · WEBGPU/WASM
-```
-
-O servidor monta a composição e o navegador executa a etapa de IA.
-
-## Modelo usado no primeiro MVP
-
-```text
-Transformers.js 3.8.1
-image-to-image
-Xenova/swin2SR-lightweight-x2-64
-```
-
-Esse modelo é deliberadamente pequeno e serve para provar a arquitetura browser-first com reconstrução de detalhes/super-resolution.
-
-**Ele ainda não é o refinador generativo guiado final.** Ainda não recebe prompt + identidade + pose + máscara como um diffusion img2img completo.
-
-## Fallback
-
-```text
-WEBGPU → preferido
-WASM   → fallback CPU no navegador
-COMPOSER → continua funcionando mesmo sem modelo de IA
-```
-
-## Sem instalação local obrigatória
-
-Para o caminho principal V0.10 você não precisa executar:
-
-- `INSTALAR_VULKAN.bat`;
-- `INSTALAR_CPU.bat`;
-- `INSTALAR_ANATOMIA.bat`;
-- stable-diffusion.cpp;
-- Diffusers;
-- Automatic1111.
-
-Esses componentes foram mantidos apenas como **legado experimental/local** para comparação e desenvolvimento.
-
-## Cache
-
-O navegador pode guardar runtime e modelo no Cache API. Isso significa que outra sessão no mesmo perfil do browser pode reaproveitar os arquivos sem instalar um programa.
-
-O cache pode ser limpo pelo botão **Limpar cache IA** ou pelo próprio navegador se o armazenamento for removido.
-
-## Arquitetura anterior preservada
-
-Continuam disponíveis:
-
-- guia estruturado;
-- busca dirigida;
-- `CORVO_LIBRARY`;
-- Composer;
-- operações e avaliações server-side;
-- reprocessamento local legado;
-- SD.CPP legado.
-
-A mudança principal é que o roadmap do refinador deixa de depender deles como runtime obrigatório.
-
-## Documentos
-
-- `DIRECAO_V10_BROWSER_FIRST.md`
-- `MAPA_TECNICO_V10.md`
-- documentos V07/V08/V09 continuam no pacote como histórico da arquitetura.
-
-## Próximo passo
-
-Substituir/expandir o refinador web MVP por um **refinador generativo guiado browser-compatible**, mantendo a mesma ideia:
-
-```text
-base_image
-+ prompt
-+ referências
-+ pose
-+ máscara opcional
-→ WebGPU
-→ imagem final
-```
+O modelo browser atual ainda é o gargalo para redesenho generativo forte; o restante do pipeline já está organizado para trocar esse provider sem refazer a arquitetura.

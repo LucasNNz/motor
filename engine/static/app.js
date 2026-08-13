@@ -114,6 +114,10 @@ const browserBeforePreview = $('browserBeforePreview');
 const browserAfterPreview = $('browserAfterPreview');
 const simpleAiStatus = $('simpleAiStatus');
 const singleDownloadLink = $('singleDownloadLink');
+const singleOperationExportLink = $('singleOperationExportLink');
+const productionGuideFile = $('productionGuideFile');
+const productionGuideInfo = $('productionGuideInfo');
+const productionGuideText = $('productionGuideText');
 
 
 let currentJobId = null;
@@ -793,7 +797,7 @@ function setSingleDownload(dataUrl, fileName = 'corvo_imagem.png') {
   else singleDownloadLink.classList.add('disabled');
 }
 
-async function refineSelectedInBrowser({ source = null, label = null, updateGuided = false } = {}) {
+async function refineSelectedInBrowser({ source = null, label = null, updateGuided = false, guideText = '', referenceCount = 0 } = {}) {
   const actualSource = source || browserSelectedSource;
   if (!actualSource) {
     browserRefineMeta.textContent = 'Selecione uma imagem, ou use um preview existente.';
@@ -810,6 +814,8 @@ async function refineSelectedInBrowser({ source = null, label = null, updateGuid
       maxInputDimension: limit,
       preserveOutputSize: true,
       ensureVisibleChange: true,
+      guideText,
+      referenceCount,
     });
     browserAfterPreview.src = result.dataUrl;
     browserDownloadLink.href = result.dataUrl;
@@ -916,7 +922,7 @@ async function runBrowserBatch(text) {
   batchSummary.textContent = `LOTE BROWSER · preparando refinador uma única vez para ${items.length} imagem(ns)...`;
   const prepared = await prepareBrowserRefiner();
   const manifest = {
-    version: '0.11.0',
+    version: '0.12.0',
     execution: 'browser_client',
     generated_at: new Date().toISOString(),
     model: browserModel.value || DEFAULT_MODEL,
@@ -1033,46 +1039,109 @@ batchFile.addEventListener('change', async () => {
   }
 });
 
+if (productionGuideFile) {
+  productionGuideFile.addEventListener('change', async () => {
+    const file = productionGuideFile.files?.[0];
+    if (!file) {
+      productionGuideInfo.textContent = 'Nenhum guia carregado · sem guia o sistema usa apenas o modo compatibilidade.';
+      return;
+    }
+    try {
+      const text = await file.text();
+      productionGuideText.value = normalizeBatchText(text);
+      const sections = (productionGuideText.value.match(/^\s*\[[^\]]+\]/gm) || []).length;
+      productionGuideInfo.textContent = `${file.name} · ${sections} bloco(s) de instrução · pronto para executar.`;
+    } catch (err) {
+      productionGuideInfo.textContent = `Erro ao ler guia: ${err.message}`;
+    }
+  });
+}
+
 generateOneBtn.addEventListener('click', async () => {
   const prompt = singlePrompt.value.trim();
+  const guideText = (productionGuideText?.value || '').trim();
   if (!prompt) {
-    singleMeta.textContent = 'Digite um prompt.';
+    singleMeta.textContent = 'Digite o pedido da imagem.';
     return;
   }
   generateOneBtn.disabled = true;
+  setSingleDownload(null);
+  if (singleOperationExportLink) { singleOperationExportLink.classList.add('disabled'); singleOperationExportLink.href = '#'; }
   singleMeta.className = 'meta';
-  singleMeta.textContent = singleBackend.value === 'composer'
-    ? 'Criando imagem...'
-    : 'Criando imagem...';
   try {
-    const browserRefineRequested = singleBackend.value === 'composer_browser';
-    const data = await api('/api/generate', {
-      method: 'POST',
-      body: JSON.stringify({
-        prompt,
-        backend: browserRefineRequested ? 'composer' : singleBackend.value,
-        engine_url: singleEngineUrl.value.trim() || null,
-        width: Number(singleWidth.value),
-        height: Number(singleHeight.value),
-        steps: Number(singleSteps.value),
-      }),
-    });
-    const baseDataUrl = `data:image/png;base64,${data.image_base64}`;
-    singlePreview.src = baseDataUrl;
-    setSingleDownload(baseDataUrl, 'corvo_composicao_base.png');
-    renderPlan(data.composition);
-    if (data.image_base64) setBrowserSource(baseDataUrl, 'última geração do Composer');
-    if (browserRefineRequested) {
-      singleMeta.textContent = `COMPOSIÇÃO PRONTA · ${formatMs(data.duration_ms)} · refinando no navegador...`;
-      const refined = await refineSelectedInBrowser({ source: baseDataUrl, label: 'geração única', updateGuided: false });
-      if (refined) {
-        singlePreview.src = refined.dataUrl;
-        setSingleDownload(refined.dataUrl, `corvo_refinado_${refined.id}.png`);
-        singleMeta.textContent = `IMAGEM PRONTA · ${formatMs(Number(data.duration_ms || 0) + Number(refined.duration_ms || 0))} · ${refined.strategy || 'browser'} · mudança ${(Math.max(0.1, Number(refined.change_score || 0) * 100)).toFixed(1)}%`;
+    let data;
+    let baseDataUrl;
+    if (guideText) {
+      singleMeta.textContent = 'Executando guia · buscando e selecionando referências...';
+      data = await api('/api/generate/guided', {
+        method: 'POST',
+        body: JSON.stringify({
+          prompt, guide_text: guideText,
+          width: Number(singleWidth.value), height: Number(singleHeight.value),
+          refiner: 'none', steps: 1, strength: 0.24,
+          collect_missing: true, auto_approve_collected: false, use_candidates: true,
+          providers: ['openverse', 'wikimedia_commons'], fast_mvp: true,
+        }),
+      });
+      currentOperationId = data.operation_id;
+      baseDataUrl = `data:image/png;base64,${data.image_base64}`;
+      singlePreview.src = baseDataUrl;
+      renderPlan(data.composition);
+      setBrowserSource(baseDataUrl, 'montagem guiada');
+      const refs = (data.references || []).length;
+      const searches = (data.searches || []).length;
+      singleMeta.textContent = `GUIA EXECUTADO · ${searches} busca(s) · ${refs} referência(s) usadas · refinando no navegador...`;
+      const refined = await refineSelectedInBrowser({ source: baseDataUrl, label: 'produção guiada', updateGuided: false, guideText, referenceCount: refs });
+      if (!refined) throw new Error('O refinador do navegador não entregou resultado.');
+      singlePreview.src = refined.dataUrl;
+      setSingleDownload(refined.dataUrl, `corvo_${data.operation_id}.png`);
+      try {
+        await api(`/api/operations/${encodeURIComponent(data.operation_id)}/browser-finalize`, {
+          method: 'POST',
+          body: JSON.stringify({
+            image_base64: String(refined.dataUrl).split(',', 2)[1],
+            refiner_metadata: {
+              id: refined.id, device: refined.device, model: refined.model, strategy: refined.strategy,
+              change_score: refined.change_score, model_difference: refined.model_difference,
+              duration_ms: refined.duration_ms, note: refined.note,
+              guided: refined.guided, guide_sections: refined.guide_sections, guide_refine_strength: refined.guide_refine_strength,
+              reference_count: refined.reference_count, unsupported_guided_directives: refined.unsupported_guided_directives,
+            },
+          }),
+        });
+      } catch (syncErr) {
+        console.warn('Falha ao sincronizar resultado web com a operação:', syncErr);
       }
+      if (singleOperationExportLink && data.export_url) {
+        singleOperationExportLink.href = data.export_url;
+        singleOperationExportLink.classList.remove('disabled');
+      }
+      const change = (Math.max(0.1, Number(refined.change_score || 0) * 100)).toFixed(1);
+      singleMeta.textContent = `IMAGEM PRONTA · GUIA → REFERÊNCIAS → COMPOSIÇÃO → REFINO · ${formatMs(Number(data.timings?.total_ms || 0) + Number(refined.duration_ms || 0))} · mudança ${change}%`;
     } else {
-      singleMeta.textContent = `IMAGEM PRONTA · ${formatMs(data.duration_ms)}`;
-      setSingleDownload(baseDataUrl, 'corvo_imagem.png');
+      singleMeta.textContent = 'Sem guia TXT · executando modo compatibilidade...';
+      const browserRefineRequested = singleBackend.value === 'composer_browser';
+      data = await api('/api/generate', {
+        method: 'POST',
+        body: JSON.stringify({
+          prompt, backend: browserRefineRequested ? 'composer' : singleBackend.value,
+          engine_url: singleEngineUrl.value.trim() || null, width: Number(singleWidth.value),
+          height: Number(singleHeight.value), steps: Number(singleSteps.value),
+        }),
+      });
+      baseDataUrl = `data:image/png;base64,${data.image_base64}`;
+      singlePreview.src = baseDataUrl;
+      setSingleDownload(baseDataUrl, 'corvo_composicao_base.png');
+      renderPlan(data.composition);
+      if (data.image_base64) setBrowserSource(baseDataUrl, 'última geração do Composer');
+      if (browserRefineRequested) {
+        const refined = await refineSelectedInBrowser({ source: baseDataUrl, label: 'geração compatibilidade', updateGuided: false });
+        if (refined) {
+          singlePreview.src = refined.dataUrl;
+          setSingleDownload(refined.dataUrl, `corvo_refinado_${refined.id}.png`);
+        }
+      }
+      singleMeta.textContent = 'IMAGEM PRONTA · MODO COMPATIBILIDADE · adicione um guia TXT para o pipeline de produção.';
     }
     singleMeta.className = 'meta success-text';
     await refreshComposerStatus(false);
@@ -1233,7 +1302,7 @@ guidedReprocessBtn.addEventListener('click', reprocessGuidedRegion);
 Promise.all([refreshHealth(), refreshComposerStatus(false), refreshMemoryGallery(), refreshRefinerStatus(), refreshBrowserRuntime()]).then(toggleBackendFields);
 setInterval(refreshHealth, 10000);
 
-// V0.10.1 · navegação simples
+// V0.12 · navegação simples · produção guiada
 for (const button of document.querySelectorAll('.nav-btn')) {
   button.addEventListener('click', () => {
     const view = button.dataset.view || 'create';

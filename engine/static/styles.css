@@ -502,3 +502,17 @@ body[data-view="library"] .collector-grid { display: block; }
 .simple-options { display: grid; grid-template-columns: minmax(180px, 260px); gap: 10px; margin-top: 14px; }
 .simple-options label { margin-bottom: 6px; font-size: 12px; }
 .simple-options select { padding: 10px 12px; }
+.guide-input-card {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid rgba(83,166,255,.22);
+  border-radius: 14px;
+  background: rgba(83,166,255,.045);
+}
+.guide-input-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:4px; }
+.mini-pill { font-size:10px; letter-spacing:.06em; padding:4px 7px; border-radius:999px; color:#bfe0ff; border:1px solid rgba(83,166,255,.28); background:rgba(83,166,255,.08); }
+.compact-copy { margin: 2px 0 10px; font-size: 12px; line-height:1.45; }
+.guide-input-card input[type="file"] { width:100%; }
+.manual-guide-details { margin-top:10px; border-top:1px solid rgba(255,255,255,.06); padding-top:8px; }
+.manual-guide-details summary { cursor:pointer; color:var(--muted); font-size:12px; font-weight:700; }
+.manual-guide-details textarea { min-height:170px; margin-top:8px; font-size:12px; }

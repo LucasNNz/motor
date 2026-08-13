@@ -100,7 +100,16 @@ class GuidedGenerateRequest(BaseModel):
     strength: float = 0.24
     collect_missing: bool = False
     auto_approve_collected: bool = False
+    use_candidates: bool = False
+    providers: List[str] = Field(default_factory=lambda: ["openverse", "wikimedia_commons"])
+    fast_mvp: bool = False
 
+
+
+
+class BrowserFinalizeRequest(BaseModel):
+    image_base64: str = Field(..., min_length=8)
+    refiner_metadata: Dict[str, Any] = Field(default_factory=dict)
 
 class MemoryUpdateRequest(BaseModel):
     status: Optional[Literal["candidates", "approved", "rejected"]] = None
