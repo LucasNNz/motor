@@ -708,13 +708,13 @@ async function refreshBrowserRuntime() {
       browserWebgpu.textContent = 'DISPONÍVEL';
       browserWebgpu.className = 'ok';
       browserRuntimeBadge.textContent = 'BROWSER ENGINE · WEBGPU';
-      if (simpleAiStatus) simpleAiStatus.textContent = 'IA local disponível · GPU';
+      if (simpleAiStatus) simpleAiStatus.textContent = 'Refinador local pronto · GPU';
       browserRuntimeBadge.className = 'badge';
     } else {
       browserWebgpu.textContent = 'FALLBACK WASM';
       browserWebgpu.className = 'warn';
       browserRuntimeBadge.textContent = 'BROWSER ENGINE · WASM';
-      if (simpleAiStatus) simpleAiStatus.textContent = 'IA local disponível · modo compatibilidade';
+      if (simpleAiStatus) simpleAiStatus.textContent = 'Refinador local pronto · modo compatibilidade';
     }
     browserProfile.textContent = String(data.profile || 'compatibility').toUpperCase();
     const info = data.adapter_info || {};
@@ -785,6 +785,14 @@ function setBrowserSource(source, label, previewUrl = null) {
   browserRefineMeta.textContent = `Fonte selecionada: ${label}`;
 }
 
+function setSingleDownload(dataUrl, fileName = 'corvo_imagem.png') {
+  if (!singleDownloadLink) return;
+  singleDownloadLink.href = dataUrl || '#';
+  singleDownloadLink.download = fileName;
+  if (dataUrl) singleDownloadLink.classList.remove('disabled');
+  else singleDownloadLink.classList.add('disabled');
+}
+
 async function refineSelectedInBrowser({ source = null, label = null, updateGuided = false } = {}) {
   const actualSource = source || browserSelectedSource;
   if (!actualSource) {
@@ -801,12 +809,14 @@ async function refineSelectedInBrowser({ source = null, label = null, updateGuid
       model: browserModel.value || DEFAULT_MODEL,
       maxInputDimension: limit,
       preserveOutputSize: true,
+      ensureVisibleChange: true,
     });
     browserAfterPreview.src = result.dataUrl;
     browserDownloadLink.href = result.dataUrl;
     browserDownloadLink.download = `corvo_refinado_${result.id}.png`;
     browserDownloadLink.classList.remove('disabled');
-    browserRefineMeta.textContent = `CONCLUÍDO NO CLIENTE · ${result.device.toUpperCase()} · ${formatMs(result.duration_ms)} · entrada IA ${result.model_input_width}×${result.model_input_height} · saída ${result.output_width}×${result.output_height}.`;
+    const changePct = Math.max(0.1, Number(result.change_score || 0) * 100).toFixed(1);
+    browserRefineMeta.textContent = `REFINO ENTREGUE · ${result.device.toUpperCase()} · ${formatMs(result.duration_ms)} · ${result.strategy || 'browser'} · mudança detectada ${changePct}% · entrada IA ${result.model_input_width}×${result.model_input_height} · saída ${result.output_width}×${result.output_height}.`;
     browserModelStatus.textContent = `PRONTO · ${result.device.toUpperCase()}`;
     browserModelStatus.className = 'ok';
     if (updateGuided && guidedPreview) guidedPreview.src = result.dataUrl;
@@ -906,7 +916,7 @@ async function runBrowserBatch(text) {
   batchSummary.textContent = `LOTE BROWSER · preparando refinador uma única vez para ${items.length} imagem(ns)...`;
   const prepared = await prepareBrowserRefiner();
   const manifest = {
-    version: '0.10.1',
+    version: '0.11.0',
     execution: 'browser_client',
     generated_at: new Date().toISOString(),
     model: browserModel.value || DEFAULT_MODEL,
@@ -1049,6 +1059,7 @@ generateOneBtn.addEventListener('click', async () => {
     });
     const baseDataUrl = `data:image/png;base64,${data.image_base64}`;
     singlePreview.src = baseDataUrl;
+    setSingleDownload(baseDataUrl, 'corvo_composicao_base.png');
     renderPlan(data.composition);
     if (data.image_base64) setBrowserSource(baseDataUrl, 'última geração do Composer');
     if (browserRefineRequested) {
@@ -1056,10 +1067,12 @@ generateOneBtn.addEventListener('click', async () => {
       const refined = await refineSelectedInBrowser({ source: baseDataUrl, label: 'geração única', updateGuided: false });
       if (refined) {
         singlePreview.src = refined.dataUrl;
-        singleMeta.textContent = `IMAGEM PRONTA · ${formatMs(Number(data.duration_ms || 0) + Number(refined.duration_ms || 0))}`;
+        setSingleDownload(refined.dataUrl, `corvo_refinado_${refined.id}.png`);
+        singleMeta.textContent = `IMAGEM PRONTA · ${formatMs(Number(data.duration_ms || 0) + Number(refined.duration_ms || 0))} · ${refined.strategy || 'browser'} · mudança ${(Math.max(0.1, Number(refined.change_score || 0) * 100)).toFixed(1)}%`;
       }
     } else {
       singleMeta.textContent = `IMAGEM PRONTA · ${formatMs(data.duration_ms)}`;
+      setSingleDownload(baseDataUrl, 'corvo_imagem.png');
     }
     singleMeta.className = 'meta success-text';
     await refreshComposerStatus(false);

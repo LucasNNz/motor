@@ -35,7 +35,7 @@
 <section class="panel browser-panel view-panel view-advanced technical-panel">
 <div class="engine-head">
 <div>
-<h2>Refinador no Navegador · V0.10.1</h2>
+<h2>Refinador no Navegador · V0.11</h2>
 <p class="muted">A IA roda no computador que abriu a página. Não exige instalar Python, CUDA, SD.CPP ou servidor local.</p>
 </div>
 <div class="badge" id="browserRuntimeBadge">Detectando navegador...</div>
@@ -62,7 +62,7 @@
 <div>
 <label>Modelo</label>
 <select id="browserModel">
-<option selected="" value="Xenova/swin2SR-lightweight-x2-64">SWIN2SR LIGHTWEIGHT ×2 · MVP</option>
+<option selected="" value="Xenova/swin2SR-lightweight-x2-64">SWIN2SR + MELHORIA VISUAL HÍBRIDA · MVP</option>
 </select>
 </div>
 <div>
@@ -92,7 +92,7 @@
 <div class="actions wrap">
 <button class="ghost" id="browserUseComposerBtn">Usar preview da geração</button>
 <button class="ghost" id="browserUseGuidedBtn">Usar preview guiado</button>
-<button id="browserRefineBtn">Refinar no navegador</button>
+<button id="browserRefineBtn">Refinar imagem</button>
 <a class="ghost disabled" download="corvo_refinado_web.png" href="#" id="browserDownloadLink">Baixar PNG</a>
 </div>
 <div class="meta" id="browserRefineMeta">Nenhuma imagem selecionada.</div>
@@ -104,17 +104,17 @@
 <div class="preview-box browser-preview"><img alt="Antes do refino web" id="browserBeforePreview"/></div>
 </div>
 <div>
-<label>DEPOIS · PROCESSADO LOCALMENTE</label>
+<label>DEPOIS · RESULTADO FINAL</label>
 <div class="preview-box browser-preview"><img alt="Depois do refino web" id="browserAfterPreview"/></div>
 </div>
 </div>
 <div class="setup-note">
-<strong>MVP V0.10.1:</strong> este primeiro modelo web é um image-to-image leve para provar download + cache + inferência no browser. Ele melhora/reconstrói detalhes, mas <strong>ainda não é</strong> o refinador generativo guiado por identidade/pose. O contrato do runtime já fica separado para trocarmos o modelo sem voltar a exigir instalação local.
+<strong>MVP V0.10.1:</strong> o refinador do MVP usa um caminho híbrido: executa IA no navegador e valida se houve mudança real. Quando a saída da IA muda pouco, o sistema completa com melhoria visual local antes de liberar o resultado. Isso mantém o fluxo simples enquanto avançamos para um refinador generativo mais forte.
       </div>
 </section>
 <main class="workspace-root">
 <section class="panel view-panel view-create primary-workspace">
-<h2>Criar imagem</h2><p class="section-intro">Descreva a imagem. O sistema monta e refina automaticamente no navegador.</p><div class="simple-engine-strip"><span class="status-dot"></span><span id="simpleAiStatus">IA local será preparada automaticamente</span></div>
+<h2>Criar imagem</h2><p class="section-intro">Descreva a imagem. O sistema monta e refina automaticamente no navegador, sem instalar nada.</p><div class="simple-engine-strip"><span class="status-dot"></span><span id="simpleAiStatus">IA local será preparada automaticamente</span></div>
 <label>O que você quer criar?</label>
 <textarea id="singlePrompt" placeholder="Descreva a imagem..." rows="6">UM GARFO COMO ELEMENTO PRINCIPAL, CENTRALIZADO, BEM DESTACADO, ESTILO ILUSTRAÇÃO 2D SEMIRREALISTA E LIMPA, FUNDO CLARO E SIMPLES, COMPOSIÇÃO OBJETIVA E FÁCIL DE ENTENDER, BOA LEITURA VISUAL PARA QUIZ, IMAGEM LIMPA, SEM TÍTULO, SEM TEXTO, SEM LOGOS E SEM MARCA-D'ÁGUA.</textarea>
 <div class="inline-fields single-config advanced-only">
@@ -155,7 +155,7 @@
 <div class="result-toolbar"><strong>Resultado</strong><a class="ghost disabled small-action" download="corvo_imagem.png" href="#" id="singleDownloadLink">Baixar PNG</a></div><div class="preview-box"><img alt="Preview" id="singlePreview"/></div>
 </section>
 <section class="panel view-panel view-batch primary-workspace">
-<h2>Gerar lote</h2><p class="section-intro">Importe um TXT ou cole os prompts. O navegador processa e monta o ZIP final.</p>
+<h2>Gerar lote</h2><p class="section-intro">Importe um TXT ou cole os prompts. O navegador processa, refina e monta o ZIP final.</p>
 <div class="batch-file-row">
 <div>
 <label>Importar TXT</label>

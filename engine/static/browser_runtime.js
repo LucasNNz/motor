@@ -90,6 +90,88 @@ async function canvasToDataUrl(canvas) {
   return { blob, dataUrl: await blobToDataUrl(blob) };
 }
 
+function cloneCanvas(source) {
+  const canvas = document.createElement('canvas');
+  canvas.width = source.width;
+  canvas.height = source.height;
+  const ctx = canvas.getContext('2d', { alpha: true });
+  ctx.drawImage(source, 0, 0);
+  return canvas;
+}
+
+async function blobToCanvas(blob) {
+  const bitmap = await createImageBitmap(blob);
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const ctx = canvas.getContext('2d', { alpha: true });
+  ctx.drawImage(bitmap, 0, 0);
+  bitmap.close();
+  return canvas;
+}
+
+function applyCanvasFilter(source, filter) {
+  const canvas = document.createElement('canvas');
+  canvas.width = source.width;
+  canvas.height = source.height;
+  const ctx = canvas.getContext('2d', { alpha: true });
+  ctx.filter = filter;
+  ctx.drawImage(source, 0, 0);
+  ctx.filter = 'none';
+  return canvas;
+}
+
+function measureCanvasDifference(a, b, { maxDimension = 128 } = {}) {
+  const width = Math.max(16, Math.min(maxDimension, a.width || b.width || 16));
+  const height = Math.max(16, Math.round(width * ((a.height || b.height || 16) / Math.max(1, (a.width || b.width || 16)))));
+  const ca = document.createElement('canvas');
+  const cb = document.createElement('canvas');
+  ca.width = cb.width = width;
+  ca.height = cb.height = height;
+  const cta = ca.getContext('2d', { alpha: true, willReadFrequently: true });
+  const ctb = cb.getContext('2d', { alpha: true, willReadFrequently: true });
+  cta.drawImage(a, 0, 0, width, height);
+  ctb.drawImage(b, 0, 0, width, height);
+  const da = cta.getImageData(0, 0, width, height).data;
+  const db = ctb.getImageData(0, 0, width, height).data;
+  let diff = 0;
+  const len = width * height;
+  for (let i = 0; i < da.length; i += 4) {
+    diff += Math.abs(da[i] - db[i]);
+    diff += Math.abs(da[i + 1] - db[i + 1]);
+    diff += Math.abs(da[i + 2] - db[i + 2]);
+  }
+  return diff / (len * 3 * 255);
+}
+
+function enhanceCanvas(source, { strength = 'normal' } = {}) {
+  const presets = {
+    light: { contrast: 1.05, saturation: 1.03, brightness: 1.01, blur: 0.5, sharpen: 0.28 },
+    normal: { contrast: 1.10, saturation: 1.06, brightness: 1.015, blur: 0.75, sharpen: 0.42 },
+    strong: { contrast: 1.14, saturation: 1.08, brightness: 1.02, blur: 1.0, sharpen: 0.58 },
+  };
+  const cfg = presets[strength] || presets.normal;
+  const base = applyCanvasFilter(source, `contrast(${cfg.contrast}) saturate(${cfg.saturation}) brightness(${cfg.brightness})`);
+  const blurred = applyCanvasFilter(base, `blur(${cfg.blur}px)`);
+
+  const out = cloneCanvas(base);
+  const ctx = out.getContext('2d', { alpha: true, willReadFrequently: true });
+  const baseData = ctx.getImageData(0, 0, out.width, out.height);
+  const blurData = blurred.getContext('2d', { alpha: true, willReadFrequently: true }).getImageData(0, 0, blurred.width, blurred.height);
+  const d = baseData.data;
+  const bd = blurData.data;
+  for (let i = 0; i < d.length; i += 4) {
+    for (let c = 0; c < 3; c += 1) {
+      const original = d[i + c];
+      const soft = bd[i + c];
+      const value = original + (original - soft) * cfg.sharpen;
+      d[i + c] = Math.max(0, Math.min(255, Math.round(value)));
+    }
+  }
+  ctx.putImageData(baseData, 0, 0);
+  return out;
+}
+
 function openDb() {
   return new Promise((resolve, reject) => {
     if (!('indexedDB' in window)) return resolve(null);
@@ -328,9 +410,10 @@ class CorvoBrowserRuntime extends EventTarget {
     }
   }
 
-  async refine(source, { device = 'auto', model = DEFAULT_MODEL, maxInputDimension = null, preserveOutputSize = true } = {}) {
+  async refine(source, { device = 'auto', model = DEFAULT_MODEL, maxInputDimension = null, preserveOutputSize = true, ensureVisibleChange = true } = {}) {
     const originalBlob = await sourceToBlob(source);
     const original = await blobDimensions(originalBlob);
+    const originalCanvas = await blobToCanvas(originalBlob);
     const detected = this.lastDetection || await this.detect();
     let mode = device === 'auto' ? detected.recommended_mode : device;
     if (mode === 'webgpu' && !detected.webgpu_ready) mode = 'wasm';
@@ -338,23 +421,65 @@ class CorvoBrowserRuntime extends EventTarget {
     const recommendedMax = detected.profile === 'high' ? 512 : detected.profile === 'medium' ? 384 : 256;
     const inputMax = Number(maxInputDimension || recommendedMax);
     const prepared = await resizeBlob(originalBlob, inputMax);
-    const { pipeline: pipe, device: effectiveDevice } = await this.prepareRefiner({ device: mode, model });
     const started = performance.now();
-    this.emit('inference-progress', { status: 'running', message: `Refinando no navegador via ${effectiveDevice.toUpperCase()}...` });
-    const raw = await pipe(prepared.blob);
-    const output = Array.isArray(raw) ? raw[0] : raw;
-    if (!output || !output.data || !output.width || !output.height) throw new Error('O modelo web não retornou uma imagem válida.');
-    let canvas = rawImageToCanvas(output);
 
-    if (preserveOutputSize && (canvas.width !== original.width || canvas.height !== original.height)) {
-      const finalCanvas = document.createElement('canvas');
-      finalCanvas.width = original.width;
-      finalCanvas.height = original.height;
-      const ctx = finalCanvas.getContext('2d', { alpha: false });
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(canvas, 0, 0, original.width, original.height);
-      canvas = finalCanvas;
+    let effectiveDevice = mode;
+    let modelCanvas = null;
+    let strategy = 'enhance-only';
+    let note = '';
+    let modelDifference = 0;
+
+    try {
+      const { pipeline: pipe, device: preparedDevice } = await this.prepareRefiner({ device: mode, model });
+      effectiveDevice = preparedDevice;
+      this.emit('inference-progress', { status: 'running', message: `Refinando no navegador via ${effectiveDevice.toUpperCase()}...` });
+      const raw = await pipe(prepared.blob);
+      const output = Array.isArray(raw) ? raw[0] : raw;
+      if (!output || !output.data || !output.width || !output.height) throw new Error('O modelo web não retornou uma imagem válida.');
+      modelCanvas = rawImageToCanvas(output);
+      if (preserveOutputSize && (modelCanvas.width !== original.width || modelCanvas.height !== original.height)) {
+        const finalCanvas = document.createElement('canvas');
+        finalCanvas.width = original.width;
+        finalCanvas.height = original.height;
+        const ctx = finalCanvas.getContext('2d', { alpha: false });
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(modelCanvas, 0, 0, original.width, original.height);
+        modelCanvas = finalCanvas;
+      }
+      modelDifference = measureCanvasDifference(originalCanvas, modelCanvas);
+      strategy = 'model';
+      note = 'Modelo browser executado com sucesso.';
+    } catch (err) {
+      note = `Pipeline de modelo não retornou melhoria utilizável (${err?.message || err}).`;
+      this.emit('inference-progress', { status: 'fallback', message: `${note} Aplicando melhoria visual local...` });
+    }
+
+    let canvas = modelCanvas ? enhanceCanvas(modelCanvas, { strength: modelDifference < 0.01 ? 'strong' : 'normal' }) : enhanceCanvas(originalCanvas, { strength: 'strong' });
+    let changeScore = measureCanvasDifference(originalCanvas, canvas);
+
+    if (modelCanvas && changeScore < modelDifference) {
+      canvas = modelCanvas;
+      changeScore = modelDifference;
+    } else if (modelCanvas) {
+      strategy = modelDifference < 0.01 ? 'model+enhance' : 'model+polish';
+      note = modelDifference < 0.01
+        ? 'O resultado bruto da IA mudou pouco; foi reforçado com melhoria visual local.'
+        : 'Resultado da IA finalizado com pós-processamento leve.';
+    } else {
+      strategy = 'enhance-only';
+      note = 'Melhoria visual local aplicada para garantir mudança perceptível no MVP.';
+    }
+
+    if (ensureVisibleChange && changeScore < 0.006) {
+      canvas = enhanceCanvas(originalCanvas, { strength: 'strong' });
+      changeScore = measureCanvasDifference(originalCanvas, canvas);
+      strategy = 'enhance-only';
+      note = 'A alteração da IA foi insuficiente; o sistema aplicou melhoria visual direta na imagem de entrada.';
+    }
+
+    if (ensureVisibleChange && changeScore < 0.004) {
+      throw new Error('Refino insuficiente: nenhuma melhoria visual perceptível foi detectada.');
     }
 
     const encoded = await canvasToDataUrl(canvas);
@@ -375,7 +500,10 @@ class CorvoBrowserRuntime extends EventTarget {
       output_width: canvas.width,
       output_height: canvas.height,
       duration_ms: durationMs,
-      note: 'MVP browser image-to-image (super-resolution/refino). Não é ainda o refinador generativo guiado definitivo.',
+      strategy,
+      change_score: Number(changeScore.toFixed(4)),
+      model_difference: Number(modelDifference.toFixed(4)),
+      note,
     };
     await saveRun(run).catch(() => {});
     this.lastResult = { ...run, dataUrl: encoded.dataUrl, blob: encoded.blob };
@@ -393,7 +521,7 @@ class CorvoBrowserRuntime extends EventTarget {
       const cache = await caches.open(name);
       const keys = await cache.keys();
       for (const req of keys) {
-        if (!/swin2sr|transformers|onnx|huggingface/i.test(req.url)) continue;
+        if (!/swin2sr|transformers|onnx|huggingface|xenova/i.test(req.url)) continue;
         data.matching_entries += 1;
         const response = await cache.match(req);
         const len = Number(response?.headers?.get('content-length') || 0);
