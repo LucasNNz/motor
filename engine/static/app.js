@@ -112,6 +112,8 @@ const browserDownloadLink = $('browserDownloadLink');
 const browserRefineMeta = $('browserRefineMeta');
 const browserBeforePreview = $('browserBeforePreview');
 const browserAfterPreview = $('browserAfterPreview');
+const simpleAiStatus = $('simpleAiStatus');
+const singleDownloadLink = $('singleDownloadLink');
 
 
 let currentJobId = null;
@@ -706,11 +708,13 @@ async function refreshBrowserRuntime() {
       browserWebgpu.textContent = 'DISPONÍVEL';
       browserWebgpu.className = 'ok';
       browserRuntimeBadge.textContent = 'BROWSER ENGINE · WEBGPU';
+      if (simpleAiStatus) simpleAiStatus.textContent = 'IA local disponível · GPU';
       browserRuntimeBadge.className = 'badge';
     } else {
       browserWebgpu.textContent = 'FALLBACK WASM';
       browserWebgpu.className = 'warn';
       browserRuntimeBadge.textContent = 'BROWSER ENGINE · WASM';
+      if (simpleAiStatus) simpleAiStatus.textContent = 'IA local disponível · modo compatibilidade';
     }
     browserProfile.textContent = String(data.profile || 'compatibility').toUpperCase();
     const info = data.adapter_info || {};
@@ -902,7 +906,7 @@ async function runBrowserBatch(text) {
   batchSummary.textContent = `LOTE BROWSER · preparando refinador uma única vez para ${items.length} imagem(ns)...`;
   const prepared = await prepareBrowserRefiner();
   const manifest = {
-    version: '0.10.0',
+    version: '0.10.1',
     execution: 'browser_client',
     generated_at: new Date().toISOString(),
     model: browserModel.value || DEFAULT_MODEL,
@@ -1028,8 +1032,8 @@ generateOneBtn.addEventListener('click', async () => {
   generateOneBtn.disabled = true;
   singleMeta.className = 'meta';
   singleMeta.textContent = singleBackend.value === 'composer'
-    ? 'Interpretando prompt → buscando memória visual → compondo...'
-    : 'Gerando...';
+    ? 'Criando imagem...'
+    : 'Criando imagem...';
   try {
     const browserRefineRequested = singleBackend.value === 'composer_browser';
     const data = await api('/api/generate', {
@@ -1052,10 +1056,10 @@ generateOneBtn.addEventListener('click', async () => {
       const refined = await refineSelectedInBrowser({ source: baseDataUrl, label: 'geração única', updateGuided: false });
       if (refined) {
         singlePreview.src = refined.dataUrl;
-        singleMeta.textContent = `SUCESSO · COMPOSER + BROWSER ${refined.device.toUpperCase()} · composição ${formatMs(data.duration_ms)} + refino ${formatMs(refined.duration_ms)}`;
+        singleMeta.textContent = `IMAGEM PRONTA · ${formatMs(Number(data.duration_ms || 0) + Number(refined.duration_ms || 0))}`;
       }
     } else {
-      singleMeta.textContent = `SUCESSO · ${data.backend.toUpperCase()} · ${formatMs(data.duration_ms)}`;
+      singleMeta.textContent = `IMAGEM PRONTA · ${formatMs(data.duration_ms)}`;
     }
     singleMeta.className = 'meta success-text';
     await refreshComposerStatus(false);
@@ -1215,3 +1219,60 @@ guidedReprocessBtn.addEventListener('click', reprocessGuidedRegion);
 
 Promise.all([refreshHealth(), refreshComposerStatus(false), refreshMemoryGallery(), refreshRefinerStatus(), refreshBrowserRuntime()]).then(toggleBackendFields);
 setInterval(refreshHealth, 10000);
+
+// V0.10.1 · navegação simples
+for (const button of document.querySelectorAll('.nav-btn')) {
+  button.addEventListener('click', () => {
+    const view = button.dataset.view || 'create';
+    document.body.dataset.view = view;
+    document.querySelectorAll('.nav-btn').forEach((item) => item.classList.toggle('active', item === button));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+}
+
+function syncSimpleDownload() {
+  if (!singleDownloadLink || !singlePreview) return;
+  const src = singlePreview.getAttribute('src') || '';
+  if (src.startsWith('data:image')) {
+    singleDownloadLink.href = src;
+    singleDownloadLink.classList.remove('disabled');
+  } else {
+    singleDownloadLink.href = '#';
+    singleDownloadLink.classList.add('disabled');
+  }
+}
+if (singlePreview && singleDownloadLink) {
+  new MutationObserver(syncSimpleDownload).observe(singlePreview, { attributes: true, attributeFilter: ['src'] });
+  syncSimpleDownload();
+}
+
+browserRuntime.addEventListener('model-progress', (event) => {
+  if (!simpleAiStatus) return;
+  const d = event.detail || {};
+  if (d.status === 'ready') simpleAiStatus.textContent = `IA local pronta · ${String(d.device || '').toUpperCase()}`;
+  else if (d.status === 'loading' || d.status === 'progress') simpleAiStatus.textContent = 'Preparando IA local...';
+  else if (d.status === 'fallback') simpleAiStatus.textContent = 'IA local em modo compatibilidade';
+});
+
+// Controles amigáveis de formato; sincronizam os campos técnicos ocultos.
+const simpleFormat = document.getElementById('simpleFormat');
+const batchSimpleFormat = document.getElementById('batchSimpleFormat');
+function applyFriendlyFormat(select, widthInput, heightInput) {
+  if (!select || !widthInput || !heightInput) return;
+  const formats = {
+    square: [768, 768],
+    landscape: [1024, 576],
+    portrait: [576, 1024],
+  };
+  const [w, h] = formats[select.value] || formats.square;
+  widthInput.value = String(w);
+  heightInput.value = String(h);
+}
+if (simpleFormat) {
+  simpleFormat.addEventListener('change', () => applyFriendlyFormat(simpleFormat, singleWidth, singleHeight));
+  applyFriendlyFormat(simpleFormat, singleWidth, singleHeight);
+}
+if (batchSimpleFormat) {
+  batchSimpleFormat.addEventListener('change', () => applyFriendlyFormat(batchSimpleFormat, batchWidth, batchHeight));
+  applyFriendlyFormat(batchSimpleFormat, batchWidth, batchHeight);
+}

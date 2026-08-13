@@ -51,7 +51,7 @@ STATIC_DIR = BASE_DIR / "static"
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 
-app = FastAPI(title="Corvo Image Engine", version="0.10.0")
+app = FastAPI(title="Corvo Image Engine", version="0.10.1")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -148,14 +148,14 @@ def _prompt_missing_map(prompt: str) -> list[dict[str, str]]:
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "jobs": len(jobs), "version": "0.10.0", **runtime_status()}
+    return {"ok": True, "jobs": len(jobs), "version": "0.10.1", **runtime_status()}
 
 
 @app.get("/api/deployment/status")
 def deployment_status():
     data = runtime_status()
     data.update({
-        "version": "0.10.0",
+        "version": "0.10.1",
         "sdcpp_local_available": not IS_VERCEL,
         "persistent_library": not IS_VERCEL,
         "note": (
@@ -171,7 +171,7 @@ def deployment_status():
 @app.get("/api/browser/config")
 def browser_config():
     return {
-        "version": "0.10.0",
+        "version": "0.10.1",
         "architecture": "browser_first",
         "execution": {
             "preferred": "webgpu",

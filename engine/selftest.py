@@ -17,7 +17,7 @@ PROMPTS = [
 
 def main():
     backend = build_backend("composer")
-    print("CORVO IMAGE ENGINE V0.10 — SELF TEST")
+    print("CORVO IMAGE ENGINE V0.10.1 — SELF TEST")
     print("Backend:", backend.name)
     for i, prompt in enumerate(PROMPTS, 1):
         started = time.perf_counter()

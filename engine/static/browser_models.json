@@ -1,6 +1,6 @@
 {
   "schema": "corvo.browser_models.v1",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "default": "swin2sr_light_x2",
   "models": [
     {

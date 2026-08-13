@@ -1,244 +1,230 @@
-<!doctype html>
+<!DOCTYPE html>
+
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Corvo Image Engine</title>
-  <link rel="stylesheet" href="/styles.css" />
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Corvo Image Engine</title>
+<link href="/styles.css" rel="stylesheet"/>
 </head>
-<body>
-  <div class="app-shell">
-    <header class="topbar">
-      <div>
-        <h1>Corvo Image Engine <span class="version">V0.10 · BROWSER-FIRST + WEBGPU</span></h1>
-        <p>Browser-first: Composer + biblioteca auditável + refinador de IA no próprio navegador, sem instalação local obrigatória.</p>
+<body data-view="create">
+<div class="app-shell">
+<header class="topbar"><div class="brand-block"><h1>Corvo Image Engine</h1><p class="muted">Crie, refine e exporte imagens sem instalar nada.</p></div><div class="top-status compact-status"><div class="badge" id="healthBadge">Conectando...</div><div class="sub-badge" id="systemBadge"></div></div></header><nav aria-label="Navegação principal" class="main-nav"><button class="nav-btn active" data-view="create" type="button">Criar</button><button class="nav-btn" data-view="batch" type="button">Lote</button><button class="nav-btn" data-view="library" type="button">Biblioteca</button><button class="nav-btn" data-view="advanced" type="button">Avançado</button></nav>
+<section class="panel view-panel view-advanced advanced-intro"><h2>Avançado</h2><p class="section-intro">Diagnóstico, modelos, execução guiada, coleta manual e recursos legados. Você não precisa abrir esta área para usar o MVP.</p></section><section class="panel composer-panel view-panel view-advanced technical-panel">
+<div class="engine-head">
+<div>
+<h2>Composer Engine</h2>
+<p class="muted">Mantém o modo legado por prompt e adiciona execução determinística pelo guia técnico auxiliar.</p>
+</div>
+<div class="actions compact">
+<button class="ghost" id="refreshComposerBtn">Atualizar banco</button>
+<button class="ghost" id="rebuildComposerBtn">Recriar banco demo</button>
+</div>
+</div>
+<div class="engine-status-grid">
+<div class="status-card"><span>Motor</span><strong class="ok">COMPOSER</strong></div>
+<div class="status-card"><span>Assets totais</span><strong id="bankAssets">Verificando...</strong></div>
+<div class="status-card"><span>Banco</span><strong id="bankBreakdown">-</strong></div>
+<div class="status-card"><span>Refinador</span><strong class="ok" id="composerRefinerMode">BROWSER-FIRST</strong></div>
+</div>
+<div class="meta" id="composerMessage"></div>
+<div class="setup-note">
+<strong>Direção atual:</strong> VERCEL ENTREGA O APP → O NAVEGADOR DETECTA WEBGPU → MODELO É BAIXADO/CACHEADO NO BROWSER → COMPOSIÇÃO → REFINO LOCAL NO CLIENTE → PNG. O motor Python/SD.CPP fica somente como legado opcional.
       </div>
-      <div class="top-status">
-        <div id="healthBadge" class="badge">Conectando...</div>
-        <div id="systemBadge" class="sub-badge"></div>
+</section>
+<section class="panel browser-panel view-panel view-advanced technical-panel">
+<div class="engine-head">
+<div>
+<h2>Refinador no Navegador · V0.10.1</h2>
+<p class="muted">A IA roda no computador que abriu a página. Não exige instalar Python, CUDA, SD.CPP ou servidor local.</p>
+</div>
+<div class="badge" id="browserRuntimeBadge">Detectando navegador...</div>
+</div>
+<div class="engine-status-grid browser-status-grid">
+<div class="status-card"><span>WebGPU</span><strong id="browserWebgpu">VERIFICANDO...</strong></div>
+<div class="status-card"><span>Perfil estimado</span><strong id="browserProfile">-</strong></div>
+<div class="status-card"><span>Cache de modelos</span><strong id="browserCache">-</strong></div>
+<div class="status-card"><span>Modelo MVP</span><strong id="browserModelStatus">NÃO CARREGADO</strong></div>
+</div>
+<div class="browser-runtime-grid">
+<div class="collector-box">
+<strong>Diagnóstico e preparação</strong>
+<div class="meta" id="browserDeviceInfo">O diagnóstico será executado automaticamente.</div>
+<div class="inline-fields browser-config">
+<div>
+<label>Execução</label>
+<select id="browserDeviceMode">
+<option selected="" value="auto">AUTO · WEBGPU → WASM</option>
+<option value="webgpu">WEBGPU</option>
+<option value="wasm">WASM / CPU</option>
+</select>
+</div>
+<div>
+<label>Modelo</label>
+<select id="browserModel">
+<option selected="" value="Xenova/swin2SR-lightweight-x2-64">SWIN2SR LIGHTWEIGHT ×2 · MVP</option>
+</select>
+</div>
+<div>
+<label>Entrada máxima</label>
+<select id="browserInputLimit">
+<option selected="" value="0">AUTO</option>
+<option value="256">256 PX · LEVE</option>
+<option value="384">384 PX · MÉDIO</option>
+<option value="512">512 PX · FORTE</option>
+</select>
+</div>
+</div>
+<div class="actions wrap">
+<button class="ghost" id="browserDetectBtn">Detectar novamente</button>
+<button class="ghost" id="browserBenchmarkBtn">Testar WebGPU</button>
+<button id="browserPrepareBtn">Preparar refinador</button>
+<button class="ghost" id="browserClearCacheBtn">Limpar cache IA</button>
+</div>
+<div class="browser-progress"><div id="browserProgressBar"></div></div>
+<div class="meta" id="browserProgressText">Na primeira utilização o navegador baixa o modelo; depois ele pode reaproveitar o cache local.</div>
+</div>
+<div class="collector-box">
+<strong>Teste de refinamento local</strong>
+<p class="muted">Use uma imagem do computador ou reutilize o último resultado do Composer/Guia. O PNG refinado não passa pelo servidor.</p>
+<label>Imagem de entrada</label>
+<input accept="image/png,image/jpeg,image/webp" id="browserImageFile" type="file"/>
+<div class="actions wrap">
+<button class="ghost" id="browserUseComposerBtn">Usar preview da geração</button>
+<button class="ghost" id="browserUseGuidedBtn">Usar preview guiado</button>
+<button id="browserRefineBtn">Refinar no navegador</button>
+<a class="ghost disabled" download="corvo_refinado_web.png" href="#" id="browserDownloadLink">Baixar PNG</a>
+</div>
+<div class="meta" id="browserRefineMeta">Nenhuma imagem selecionada.</div>
+</div>
+</div>
+<div class="browser-preview-grid">
+<div>
+<label>ANTES</label>
+<div class="preview-box browser-preview"><img alt="Antes do refino web" id="browserBeforePreview"/></div>
+</div>
+<div>
+<label>DEPOIS · PROCESSADO LOCALMENTE</label>
+<div class="preview-box browser-preview"><img alt="Depois do refino web" id="browserAfterPreview"/></div>
+</div>
+</div>
+<div class="setup-note">
+<strong>MVP V0.10.1:</strong> este primeiro modelo web é um image-to-image leve para provar download + cache + inferência no browser. Ele melhora/reconstrói detalhes, mas <strong>ainda não é</strong> o refinador generativo guiado por identidade/pose. O contrato do runtime já fica separado para trocarmos o modelo sem voltar a exigir instalação local.
       </div>
-    </header>
-
-    <section class="panel composer-panel">
-      <div class="engine-head">
-        <div>
-          <h2>Composer Engine</h2>
-          <p class="muted">Mantém o modo legado por prompt e adiciona execução determinística pelo guia técnico auxiliar.</p>
-        </div>
-        <div class="actions compact">
-          <button id="refreshComposerBtn" class="ghost">Atualizar banco</button>
-          <button id="rebuildComposerBtn" class="ghost">Recriar banco demo</button>
-        </div>
-      </div>
-      <div class="engine-status-grid">
-        <div class="status-card"><span>Motor</span><strong class="ok">COMPOSER</strong></div>
-        <div class="status-card"><span>Assets totais</span><strong id="bankAssets">Verificando...</strong></div>
-        <div class="status-card"><span>Banco</span><strong id="bankBreakdown">-</strong></div>
-        <div class="status-card"><span>Refinador</span><strong id="composerRefinerMode" class="ok">BROWSER-FIRST</strong></div>
-      </div>
-      <div id="composerMessage" class="meta"></div>
-      <div class="setup-note">
-        <strong>Direção atual:</strong> VERCEL ENTREGA O APP → O NAVEGADOR DETECTA WEBGPU → MODELO É BAIXADO/CACHEADO NO BROWSER → COMPOSIÇÃO → REFINO LOCAL NO CLIENTE → PNG. O motor Python/SD.CPP fica somente como legado opcional.
-      </div>
-    </section>
-
-    <section class="panel browser-panel">
-      <div class="engine-head">
-        <div>
-          <h2>Refinador no Navegador · V0.10</h2>
-          <p class="muted">A IA roda no computador que abriu a página. Não exige instalar Python, CUDA, SD.CPP ou servidor local.</p>
-        </div>
-        <div id="browserRuntimeBadge" class="badge">Detectando navegador...</div>
-      </div>
-      <div class="engine-status-grid browser-status-grid">
-        <div class="status-card"><span>WebGPU</span><strong id="browserWebgpu">VERIFICANDO...</strong></div>
-        <div class="status-card"><span>Perfil estimado</span><strong id="browserProfile">-</strong></div>
-        <div class="status-card"><span>Cache de modelos</span><strong id="browserCache">-</strong></div>
-        <div class="status-card"><span>Modelo MVP</span><strong id="browserModelStatus">NÃO CARREGADO</strong></div>
-      </div>
-      <div class="browser-runtime-grid">
-        <div class="collector-box">
-          <strong>Diagnóstico e preparação</strong>
-          <div id="browserDeviceInfo" class="meta">O diagnóstico será executado automaticamente.</div>
-          <div class="inline-fields browser-config">
-            <div>
-              <label>Execução</label>
-              <select id="browserDeviceMode">
-                <option value="auto" selected>AUTO · WEBGPU → WASM</option>
-                <option value="webgpu">WEBGPU</option>
-                <option value="wasm">WASM / CPU</option>
-              </select>
-            </div>
-            <div>
-              <label>Modelo</label>
-              <select id="browserModel">
-                <option value="Xenova/swin2SR-lightweight-x2-64" selected>SWIN2SR LIGHTWEIGHT ×2 · MVP</option>
-              </select>
-            </div>
-            <div>
-              <label>Entrada máxima</label>
-              <select id="browserInputLimit">
-                <option value="0" selected>AUTO</option>
-                <option value="256">256 PX · LEVE</option>
-                <option value="384">384 PX · MÉDIO</option>
-                <option value="512">512 PX · FORTE</option>
-              </select>
-            </div>
-          </div>
-          <div class="actions wrap">
-            <button id="browserDetectBtn" class="ghost">Detectar novamente</button>
-            <button id="browserBenchmarkBtn" class="ghost">Testar WebGPU</button>
-            <button id="browserPrepareBtn">Preparar refinador</button>
-            <button id="browserClearCacheBtn" class="ghost">Limpar cache IA</button>
-          </div>
-          <div class="browser-progress"><div id="browserProgressBar"></div></div>
-          <div id="browserProgressText" class="meta">Na primeira utilização o navegador baixa o modelo; depois ele pode reaproveitar o cache local.</div>
-        </div>
-        <div class="collector-box">
-          <strong>Teste de refinamento local</strong>
-          <p class="muted">Use uma imagem do computador ou reutilize o último resultado do Composer/Guia. O PNG refinado não passa pelo servidor.</p>
-          <label>Imagem de entrada</label>
-          <input id="browserImageFile" type="file" accept="image/png,image/jpeg,image/webp" />
-          <div class="actions wrap">
-            <button id="browserUseComposerBtn" class="ghost">Usar preview da geração</button>
-            <button id="browserUseGuidedBtn" class="ghost">Usar preview guiado</button>
-            <button id="browserRefineBtn">Refinar no navegador</button>
-            <a id="browserDownloadLink" class="ghost disabled" href="#" download="corvo_refinado_web.png">Baixar PNG</a>
-          </div>
-          <div id="browserRefineMeta" class="meta">Nenhuma imagem selecionada.</div>
-        </div>
-      </div>
-      <div class="browser-preview-grid">
-        <div>
-          <label>ANTES</label>
-          <div class="preview-box browser-preview"><img id="browserBeforePreview" alt="Antes do refino web" /></div>
-        </div>
-        <div>
-          <label>DEPOIS · PROCESSADO LOCALMENTE</label>
-          <div class="preview-box browser-preview"><img id="browserAfterPreview" alt="Depois do refino web" /></div>
-        </div>
-      </div>
-      <div class="setup-note">
-        <strong>MVP V0.10:</strong> este primeiro modelo web é um image-to-image leve para provar download + cache + inferência no browser. Ele melhora/reconstrói detalhes, mas <strong>ainda não é</strong> o refinador generativo guiado por identidade/pose. O contrato do runtime já fica separado para trocarmos o modelo sem voltar a exigir instalação local.
-      </div>
-    </section>
-
-    <main class="grid">
-      <section class="panel">
-        <h2>Geração única</h2>
-        <label>Prompt</label>
-        <textarea id="singlePrompt" rows="6" placeholder="Descreva a imagem...">UM GARFO COMO ELEMENTO PRINCIPAL, CENTRALIZADO, BEM DESTACADO, ESTILO ILUSTRAÇÃO 2D SEMIRREALISTA E LIMPA, FUNDO CLARO E SIMPLES, COMPOSIÇÃO OBJETIVA E FÁCIL DE ENTENDER, BOA LEITURA VISUAL PARA QUIZ, IMAGEM LIMPA, SEM TÍTULO, SEM TEXTO, SEM LOGOS E SEM MARCA-D'ÁGUA.</textarea>
-        <div class="inline-fields single-config">
-          <div>
-            <label>Backend</label>
-            <select id="singleBackend">
-              <option value="composer_browser" selected>COMPOSER + BROWSER AI · RECOMENDADO</option>
-              <option value="composer">COMPOSER ENGINE · SEM IA</option>
-              <option value="sdcpp_local">SD.CPP · LEGADO LOCAL</option>
-              <option value="diffusers_cpu">DIFFUSERS CPU · LEGADO LOCAL</option>
-              <option value="automatic1111">AUTOMATIC1111 · LEGADO REMOTO</option>
-              <option value="mock">MOCK</option>
-            </select>
-          </div>
-          <div class="a1111-only">
-            <label>Engine URL (somente A1111)</label>
-            <input id="singleEngineUrl" type="text" value="http://127.0.0.1:7860" />
-          </div>
-          <div>
-            <label>Largura</label>
-            <input id="singleWidth" type="number" value="768" min="256" step="64" />
-          </div>
-          <div>
-            <label>Altura</label>
-            <input id="singleHeight" type="number" value="768" min="256" step="64" />
-          </div>
-          <div class="generative-only">
-            <label>Steps (só gerativo)</label>
-            <input id="singleSteps" type="number" value="1" min="1" max="50" />
-          </div>
-        </div>
-        <div class="actions wrap">
-          <button id="generateOneBtn">Compor imagem</button>
-          <button id="collectMissingBtn" class="ghost">Buscar faltantes do prompt</button>
-        </div>
-        <div id="singleMeta" class="meta"></div>
-        <div id="singlePlan" class="plan-box empty">O plano de composição aparecerá aqui.</div>
-        <div class="preview-box"><img id="singlePreview" alt="Preview" /></div>
-      </section>
-
-      <section class="panel">
-        <h2>Lote por TXT</h2>
-        <div class="batch-file-row">
-          <div>
-            <label>Importar TXT</label>
-            <input id="batchFile" type="file" accept=".txt,text/plain" />
-          </div>
-          <div class="file-info" id="batchFileInfo">Ou cole os prompts abaixo.</div>
-        </div>
-        <label>Prompts — uma linha por item ou <code>ID|PROMPT</code></label>
-        <textarea id="batchText" rows="10" placeholder="001|UM GARFO CENTRALIZADO, FUNDO CLARO, SEM TEXTO
-002|UM MENINO NINJA SURPRESO APONTANDO PARA UMA CAIXA EM UMA FLORESTA"></textarea>
-        <div class="inline-fields batch-config">
-          <div>
-            <label>Backend</label>
-            <select id="batchBackend">
-              <option value="composer_browser" selected>COMPOSER + BROWSER AI · CLIENTE</option>
-              <option value="composer">COMPOSER ENGINE · SERVIDOR</option>
-              <option value="sdcpp_local">SD.CPP · LEGADO LOCAL</option>
-              <option value="diffusers_cpu">DIFFUSERS CPU · LEGADO LOCAL</option>
-              <option value="automatic1111">AUTOMATIC1111 · LEGADO REMOTO</option>
-              <option value="mock">MOCK</option>
-            </select>
-          </div>
-          <div class="a1111-only">
-            <label>Engine URL (somente A1111)</label>
-            <input id="batchEngineUrl" type="text" value="http://127.0.0.1:7860" />
-          </div>
-          <div>
-            <label>Largura</label>
-            <input id="batchWidth" type="number" value="768" min="256" step="64" />
-          </div>
-          <div>
-            <label>Altura</label>
-            <input id="batchHeight" type="number" value="768" min="256" step="64" />
-          </div>
-          <div class="generative-only">
-            <label>Steps (só gerativo)</label>
-            <input id="batchSteps" type="number" value="1" min="1" max="50" />
-          </div>
-        </div>
-        <div class="actions wrap">
-          <button id="startBatchBtn">Iniciar lote</button>
-          <button id="cancelBatchBtn" class="ghost">Cancelar</button>
-          <a id="downloadZipLink" class="ghost disabled" href="#" download>Baixar ZIP</a>
-        </div>
-        <div id="batchSummary" class="meta"></div>
-        <div class="queue-table-wrap">
-          <table class="queue-table">
-            <thead>
-              <tr><th>ID</th><th>Status</th><th>Tempo</th><th>Composição</th><th>Arquivo / Erro</th></tr>
-            </thead>
-            <tbody id="queueBody"></tbody>
-          </table>
-        </div>
-      </section>
-    </main>
-
-
-    <section class="panel guided-panel">
-      <div class="engine-head">
-        <div>
-          <h2>Execução Guiada por TXT</h2>
-          <p class="muted">O Engine não precisa interpretar o pedido: ele executa [SCENE], [SEARCH_*], [FILTER], [COMPOSITION], [RENDER] e correções [REPROCESS]/[FIX].</p>
-        </div>
-        <div id="guidedOperationBadge" class="badge">Nenhuma operação</div>
-      </div>
-      <div class="guided-grid">
-        <div class="collector-box">
-          <label>Pedido original</label>
-          <textarea id="guidedPrompt" rows="3">NINJA SENTADO EM UMA CADEIRA EM UMA ALDEIA.</textarea>
-          <label>Guia técnico auxiliar</label>
-          <textarea id="guidedGuide" rows="20">[SCENE]
+</section>
+<main class="workspace-root">
+<section class="panel view-panel view-create primary-workspace">
+<h2>Criar imagem</h2><p class="section-intro">Descreva a imagem. O sistema monta e refina automaticamente no navegador.</p><div class="simple-engine-strip"><span class="status-dot"></span><span id="simpleAiStatus">IA local será preparada automaticamente</span></div>
+<label>O que você quer criar?</label>
+<textarea id="singlePrompt" placeholder="Descreva a imagem..." rows="6">UM GARFO COMO ELEMENTO PRINCIPAL, CENTRALIZADO, BEM DESTACADO, ESTILO ILUSTRAÇÃO 2D SEMIRREALISTA E LIMPA, FUNDO CLARO E SIMPLES, COMPOSIÇÃO OBJETIVA E FÁCIL DE ENTENDER, BOA LEITURA VISUAL PARA QUIZ, IMAGEM LIMPA, SEM TÍTULO, SEM TEXTO, SEM LOGOS E SEM MARCA-D'ÁGUA.</textarea>
+<div class="inline-fields single-config advanced-only">
+<div>
+<label>Backend</label>
+<select id="singleBackend">
+<option selected="" value="composer_browser">COMPOSER + BROWSER AI · RECOMENDADO</option>
+<option value="composer">COMPOSER ENGINE · SEM IA</option>
+<option value="sdcpp_local">SD.CPP · LEGADO LOCAL</option>
+<option value="diffusers_cpu">DIFFUSERS CPU · LEGADO LOCAL</option>
+<option value="automatic1111">AUTOMATIC1111 · LEGADO REMOTO</option>
+<option value="mock">MOCK</option>
+</select>
+</div>
+<div class="a1111-only">
+<label>Engine URL (somente A1111)</label>
+<input id="singleEngineUrl" type="text" value="http://127.0.0.1:7860"/>
+</div>
+<div>
+<label>Largura</label>
+<input id="singleWidth" min="256" step="64" type="number" value="768"/>
+</div>
+<div>
+<label>Altura</label>
+<input id="singleHeight" min="256" step="64" type="number" value="768"/>
+</div>
+<div class="generative-only">
+<label>Steps (só gerativo)</label>
+<input id="singleSteps" max="50" min="1" type="number" value="1"/>
+</div>
+</div>
+<div class="simple-options"><div><label>Formato</label><select id="simpleFormat"><option selected="" value="square">Quadrado · 1:1</option><option value="landscape">Horizontal · 16:9</option><option value="portrait">Vertical · 9:16</option></select></div></div><div class="actions wrap">
+<button class="primary-action" id="generateOneBtn">Gerar imagem</button>
+<button class="ghost advanced-only" id="collectMissingBtn">Buscar faltantes do prompt</button>
+</div>
+<div class="meta" id="singleMeta"></div>
+<div class="plan-box empty advanced-only" id="singlePlan">O plano de composição aparecerá aqui.</div>
+<div class="result-toolbar"><strong>Resultado</strong><a class="ghost disabled small-action" download="corvo_imagem.png" href="#" id="singleDownloadLink">Baixar PNG</a></div><div class="preview-box"><img alt="Preview" id="singlePreview"/></div>
+</section>
+<section class="panel view-panel view-batch primary-workspace">
+<h2>Gerar lote</h2><p class="section-intro">Importe um TXT ou cole os prompts. O navegador processa e monta o ZIP final.</p>
+<div class="batch-file-row">
+<div>
+<label>Importar TXT</label>
+<input accept=".txt,text/plain" id="batchFile" type="file"/>
+</div>
+<div class="file-info" id="batchFileInfo">Ou cole os prompts abaixo.</div>
+</div>
+<label>Prompts — uma linha por item ou <code>ID|PROMPT</code></label>
+<textarea id="batchText" placeholder="001|UM GARFO CENTRALIZADO, FUNDO CLARO, SEM TEXTO
+002|UM MENINO NINJA SURPRESO APONTANDO PARA UMA CAIXA EM UMA FLORESTA" rows="10"></textarea>
+<div class="inline-fields batch-config advanced-only">
+<div>
+<label>Backend</label>
+<select id="batchBackend">
+<option selected="" value="composer_browser">COMPOSER + BROWSER AI · CLIENTE</option>
+<option value="composer">COMPOSER ENGINE · SERVIDOR</option>
+<option value="sdcpp_local">SD.CPP · LEGADO LOCAL</option>
+<option value="diffusers_cpu">DIFFUSERS CPU · LEGADO LOCAL</option>
+<option value="automatic1111">AUTOMATIC1111 · LEGADO REMOTO</option>
+<option value="mock">MOCK</option>
+</select>
+</div>
+<div class="a1111-only">
+<label>Engine URL (somente A1111)</label>
+<input id="batchEngineUrl" type="text" value="http://127.0.0.1:7860"/>
+</div>
+<div>
+<label>Largura</label>
+<input id="batchWidth" min="256" step="64" type="number" value="768"/>
+</div>
+<div>
+<label>Altura</label>
+<input id="batchHeight" min="256" step="64" type="number" value="768"/>
+</div>
+<div class="generative-only">
+<label>Steps (só gerativo)</label>
+<input id="batchSteps" max="50" min="1" type="number" value="1"/>
+</div>
+</div>
+<div class="simple-options"><div><label>Formato do lote</label><select id="batchSimpleFormat"><option selected="" value="square">Quadrado · 1:1</option><option value="landscape">Horizontal · 16:9</option><option value="portrait">Vertical · 9:16</option></select></div></div><div class="actions wrap">
+<button class="primary-action" id="startBatchBtn">Gerar lote</button>
+<button class="ghost" id="cancelBatchBtn">Cancelar</button>
+<a class="ghost disabled" download="" href="#" id="downloadZipLink">Baixar ZIP</a>
+</div>
+<div class="meta" id="batchSummary"></div>
+<div class="queue-table-wrap">
+<table class="queue-table">
+<thead>
+<tr><th>ID</th><th>Status</th><th>Tempo</th><th>Composição</th><th>Arquivo / Erro</th></tr>
+</thead>
+<tbody id="queueBody"></tbody>
+</table>
+</div>
+</section>
+</main>
+<section class="panel guided-panel view-panel view-advanced technical-panel">
+<div class="engine-head">
+<div>
+<h2>Execução Guiada por TXT</h2>
+<p class="muted">O Engine não precisa interpretar o pedido: ele executa [SCENE], [SEARCH_*], [FILTER], [COMPOSITION], [RENDER] e correções [REPROCESS]/[FIX].</p>
+</div>
+<div class="badge" id="guidedOperationBadge">Nenhuma operação</div>
+</div>
+<div class="guided-grid">
+<div class="collector-box">
+<label>Pedido original</label>
+<textarea id="guidedPrompt" rows="3">NINJA SENTADO EM UMA CADEIRA EM UMA ALDEIA.</textarea>
+<label>Guia técnico auxiliar</label>
+<textarea id="guidedGuide" rows="20">[SCENE]
 subject=ninja_jovem
 visual_reference=naruto
 action=sentado
@@ -299,40 +285,40 @@ redraw_connections=true
 harmonize_lighting=true
 harmonize_style=true
 fix_anatomy=true</textarea>
-          <div class="inline-fields collect-config two-row">
-            <div><label>Largura</label><input id="guidedWidth" type="number" value="768" min="256" step="64" /></div>
-            <div><label>Altura</label><input id="guidedHeight" type="number" value="768" min="256" step="64" /></div>
-            <div><label>Refinador</label><select id="guidedRefiner"><option value="browser_swin2sr" selected>BROWSER AI · WEBGPU/WASM</option><option value="none">SEM REFINADOR</option><option value="light_cpu">LIGHT CPU · LEGADO</option><option value="sdcpp_img2img">SD.CPP IMG2IMG · LEGADO LOCAL</option></select></div>
-            <div><label>Steps IA</label><input id="guidedSteps" type="number" value="3" min="1" max="12" /></div>
-            <div><label>Força img2img</label><input id="guidedStrength" type="number" value="0.24" min="0.05" max="0.85" step="0.01" /></div>
-            <div><label>Buscar faltantes ao executar</label><select id="guidedCollectMissing"><option value="false" selected>NÃO</option><option value="true">SIM</option></select></div>
-          </div>
-          <div class="actions wrap">
-            <button id="guidedCollectBtn" class="ghost">Executar buscas do guia</button>
-            <button id="guidedRunBtn">Executar guia</button>
-            <a id="guidedExportLink" class="ghost disabled" href="#" download>Exportar operação</a>
-          </div>
-          <div id="guidedMeta" class="meta">O guia é o contrato de execução local.</div>
-        </div>
-        <div class="collector-box">
-          <div class="preview-box"><img id="guidedPreview" alt="Resultado guiado" /></div>
-          <div id="guidedPlan" class="plan-box empty">A seleção de referências e os tempos aparecerão aqui.</div>
-          <div class="setup-note small-note">
-            <strong>Avaliação da operação</strong>
-            <div class="inline-fields collect-config two-row">
-              <div><label>Tipo de erro</label><input id="guidedErrorType" type="text" placeholder="pose, iluminação, refinador..." /></div>
-              <div><label>Severidade</label><select id="guidedSeverity"><option value="">-</option><option value="baixa">BAIXA</option><option value="media">MÉDIA</option><option value="alta">ALTA</option></select></div>
-            </div>
-            <label>Problema / observação</label><textarea id="guidedProblem" rows="3" placeholder="Ex.: mão direita ficou ruim; preservar o restante."></textarea>
-            <div class="actions wrap">
-              <button id="guidedApproveBtn" class="ghost">Aprovar resultado</button>
-              <button id="guidedRejectBtn" class="ghost">Reprovar resultado</button>
-              <button id="guidedSaveEvalBtn" class="ghost">Salvar anotação</button>
-            </div>
-            <div class="reprocess-box">
-              <strong>Reprocessamento direcionado · anatomia automática quando disponível</strong>
-              <p class="muted">Cria uma operação filha e corrige apenas a região indicada em [FIX], preservando o restante.</p>
-              <textarea id="guidedFixGuide" rows="10">[REPROCESS]
+<div class="inline-fields collect-config two-row">
+<div><label>Largura</label><input id="guidedWidth" min="256" step="64" type="number" value="768"/></div>
+<div><label>Altura</label><input id="guidedHeight" min="256" step="64" type="number" value="768"/></div>
+<div><label>Refinador</label><select id="guidedRefiner"><option selected="" value="browser_swin2sr">BROWSER AI · WEBGPU/WASM</option><option value="none">SEM REFINADOR</option><option value="light_cpu">LIGHT CPU · LEGADO</option><option value="sdcpp_img2img">SD.CPP IMG2IMG · LEGADO LOCAL</option></select></div>
+<div><label>Steps IA</label><input id="guidedSteps" max="12" min="1" type="number" value="3"/></div>
+<div><label>Força img2img</label><input id="guidedStrength" max="0.85" min="0.05" step="0.01" type="number" value="0.24"/></div>
+<div><label>Buscar faltantes ao executar</label><select id="guidedCollectMissing"><option selected="" value="false">NÃO</option><option value="true">SIM</option></select></div>
+</div>
+<div class="actions wrap">
+<button class="ghost" id="guidedCollectBtn">Executar buscas do guia</button>
+<button id="guidedRunBtn">Executar guia</button>
+<a class="ghost disabled" download="" href="#" id="guidedExportLink">Exportar operação</a>
+</div>
+<div class="meta" id="guidedMeta">O guia é o contrato de execução local.</div>
+</div>
+<div class="collector-box">
+<div class="preview-box"><img alt="Resultado guiado" id="guidedPreview"/></div>
+<div class="plan-box empty" id="guidedPlan">A seleção de referências e os tempos aparecerão aqui.</div>
+<div class="setup-note small-note">
+<strong>Avaliação da operação</strong>
+<div class="inline-fields collect-config two-row">
+<div><label>Tipo de erro</label><input id="guidedErrorType" placeholder="pose, iluminação, refinador..." type="text"/></div>
+<div><label>Severidade</label><select id="guidedSeverity"><option value="">-</option><option value="baixa">BAIXA</option><option value="media">MÉDIA</option><option value="alta">ALTA</option></select></div>
+</div>
+<label>Problema / observação</label><textarea id="guidedProblem" placeholder="Ex.: mão direita ficou ruim; preservar o restante." rows="3"></textarea>
+<div class="actions wrap">
+<button class="ghost" id="guidedApproveBtn">Aprovar resultado</button>
+<button class="ghost" id="guidedRejectBtn">Reprovar resultado</button>
+<button class="ghost" id="guidedSaveEvalBtn">Salvar anotação</button>
+</div>
+<div class="reprocess-box">
+<strong>Reprocessamento direcionado · anatomia automática quando disponível</strong>
+<p class="muted">Cria uma operação filha e corrige apenas a região indicada em [FIX], preservando o restante.</p>
+<textarea id="guidedFixGuide" rows="10">[REPROCESS]
 reuse_previous_scene=true
 preserve_character=true
 preserve_pose=true
@@ -345,159 +331,154 @@ action=redraw
 problem=mao direita precisa ser corrigida
 margin=0.28
 feather=0.10</textarea>
-              <div class="actions wrap">
-                <button id="guidedReprocessBtn" class="ghost">Reprocessar região</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-
-    <section class="panel refiner-panel">
-      <div class="engine-head">
-        <div>
-          <h2>Benchmark do Refinador Legado</h2>
-          <p class="muted">Mantido apenas para comparar com o caminho antigo local. O benchmark principal da V0.10 está no painel Browser/WebGPU acima.</p>
-        </div>
-        <div id="refinerStatusBadge" class="badge">Verificando refinador...</div>
-      </div>
-      <div class="refiner-controls">
-        <div>
-          <label>Resolução</label>
-          <select id="refinerSize">
-            <option value="512" selected>512 × 512</option>
-            <option value="768">768 × 768</option>
-          </select>
-        </div>
-        <div>
-          <label>Steps IA</label>
-          <input id="refinerSteps" type="number" value="3" min="1" max="12" />
-        </div>
-        <div>
-          <label>Força img2img</label>
-          <input id="refinerStrength" type="number" value="0.24" min="0.05" max="0.85" step="0.01" />
-        </div>
-        <div class="refiner-button-box">
-          <label>Baseline</label>
-          <button id="benchmarkLightBtn" class="ghost">Testar refino leve</button>
-        </div>
-        <div class="refiner-button-box">
-          <label>Teste decisivo</label>
-          <button id="benchmarkAiBtn">Testar IA · SD.CPP</button>
-        </div>
-      </div>
-      <label>Prompts do benchmark — um por linha</label>
-      <textarea id="benchmarkPrompts" rows="6">UM GARFO COMO ELEMENTO PRINCIPAL, CENTRALIZADO, FUNDO CLARO E SIMPLES, ILUSTRAÇÃO 2D SEMIRREALISTA LIMPA, SEM TEXTO, SEM LOGOS.
+<div class="actions wrap">
+<button class="ghost" id="guidedReprocessBtn">Reprocessar região</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section class="panel refiner-panel view-panel view-advanced technical-panel">
+<div class="engine-head">
+<div>
+<h2>Benchmark do Refinador Legado</h2>
+<p class="muted">Mantido apenas para comparar com o caminho antigo local. O benchmark principal da V0.10 está no painel Browser/WebGPU acima.</p>
+</div>
+<div class="badge" id="refinerStatusBadge">Verificando refinador...</div>
+</div>
+<div class="refiner-controls">
+<div>
+<label>Resolução</label>
+<select id="refinerSize">
+<option selected="" value="512">512 × 512</option>
+<option value="768">768 × 768</option>
+</select>
+</div>
+<div>
+<label>Steps IA</label>
+<input id="refinerSteps" max="12" min="1" type="number" value="3"/>
+</div>
+<div>
+<label>Força img2img</label>
+<input id="refinerStrength" max="0.85" min="0.05" step="0.01" type="number" value="0.24"/>
+</div>
+<div class="refiner-button-box">
+<label>Baseline</label>
+<button class="ghost" id="benchmarkLightBtn">Testar refino leve</button>
+</div>
+<div class="refiner-button-box">
+<label>Teste decisivo</label>
+<button id="benchmarkAiBtn">Testar IA · SD.CPP</button>
+</div>
+</div>
+<label>Prompts do benchmark — um por linha</label>
+<textarea id="benchmarkPrompts" rows="6">UM GARFO COMO ELEMENTO PRINCIPAL, CENTRALIZADO, FUNDO CLARO E SIMPLES, ILUSTRAÇÃO 2D SEMIRREALISTA LIMPA, SEM TEXTO, SEM LOGOS.
 UMA MAÇÃ VERMELHA CENTRALIZADA, BEM DESTACADA, FUNDO CLARO, ILUSTRAÇÃO 2D SEMIRREALISTA LIMPA, SEM TEXTO.
 UM MENINO NINJA SURPRESO APONTANDO PARA UMA CAIXA EM UMA FLORESTA, ILUSTRAÇÃO 2D SEMIRREALISTA LIMPA, SEM TEXTO.
 UMA BOLA DE FUTEBOL EM UM CAMPO, ELEMENTO PRINCIPAL BEM DESTACADO, ILUSTRAÇÃO 2D LIMPA, SEM TEXTO.
 UM CACHORRO FELIZ EM UM PARQUE, COMPOSIÇÃO LIMPA PARA QUIZ, ILUSTRAÇÃO 2D SEMIRREALISTA, SEM TEXTO.</textarea>
-      <div class="actions wrap">
-        <button id="cancelBenchmarkBtn" class="ghost">Cancelar benchmark</button>
-        <button id="refreshRefinerBtn" class="ghost">Atualizar status</button>
-      </div>
-      <div id="benchmarkMeta" class="meta">LEGADO: estes testes exigem instalação local. Para a V0.10, use o benchmark WebGPU do painel Browser acima.</div>
-      <div id="benchmarkVerdict" class="benchmark-verdict empty">Nenhum benchmark executado.</div>
-      <div class="queue-table-wrap benchmark-table-wrap">
-        <table class="queue-table">
-          <thead><tr><th>#</th><th>Status</th><th>Composer</th><th>Refinador</th><th>Total</th><th>RAM motor</th><th>Antes / Depois</th></tr></thead>
-          <tbody id="benchmarkBody"></tbody>
-        </table>
-      </div>
-    </section>
-
-    <section class="panel collect-panel">
-      <div class="engine-head">
-        <div>
-          <h2>Coleta + Biblioteca Visual Auditável</h2>
-          <p class="muted">As referências ficam em pasta física, com candidates / approved / rejected, origem, query, uso e histórico de sucesso.</p>
-        </div>
-      </div>
-      <div class="collector-grid">
-        <div class="collector-box">
-          <label>Consulta manual</label>
-          <textarea id="collectQuery" rows="3" placeholder="Ex.: garfo cartoon, forest background, ninja outfit">garfo cartoon</textarea>
-          <div class="inline-fields collect-config two-row">
-            <div>
-              <label>Tipo</label>
-              <select id="collectType">
-                <option value="object" selected>OBJETO</option>
-                <option value="background">FUNDO</option>
-                <option value="pose">POSE</option>
-                <option value="face">ROSTO/EXPRESSÃO</option>
-                <option value="outfit">ROUPA</option>
-                <option value="character">PERSONAGEM</option>
-                <option value="other">OUTRO</option>
-              </select>
-            </div>
-            <div>
-              <label>Salvar top N</label>
-              <input id="collectSaveLimit" type="number" value="5" min="1" max="20" />
-            </div>
-            <div>
-              <label>Por fonte</label>
-              <input id="collectPerProvider" type="number" value="8" min="1" max="30" />
-            </div>
-            <div>
-              <label>Aprovar automaticamente</label>
-              <select id="collectAutoApprove">
-                <option value="false" selected>NÃO</option>
-                <option value="true">SIM</option>
-              </select>
-            </div>
-          </div>
-          <div class="actions wrap">
-            <button id="collectBtn">Coletar agora</button>
-            <button id="refreshMemoryBtn" class="ghost">Atualizar memória</button>
-          </div>
-          <div id="collectMeta" class="meta"></div>
-          <div id="collectSummary" class="setup-note small-note">Os resultados do coletor aparecerão aqui.</div>
-        </div>
-        <div class="collector-box">
-          <div class="memory-head">
-            <div>
-              <label>Filtrar memória</label>
-              <div class="memory-filters">
-                <select id="memoryTypeFilter">
-                  <option value="">TODOS</option>
-                  <option value="object">OBJETO</option>
-                  <option value="background">FUNDO</option>
-                  <option value="pose">POSE</option>
-                  <option value="face">ROSTO</option>
-                  <option value="outfit">ROUPA</option>
-                  <option value="character">PERSONAGEM</option>
-                  <option value="lighting">ILUMINAÇÃO</option>
-                  <option value="camera">CÂMERA</option>
-                  <option value="weather">CLIMA</option>
-                  <option value="texture">TEXTURA</option>
-                  <option value="style">ESTILO</option>
-                  <option value="composition">COMPOSIÇÃO</option>
-                </select>
-                <select id="memoryStateFilter"><option value="">TODOS ESTADOS</option><option value="candidates">CANDIDATES</option><option value="approved">APPROVED</option><option value="rejected">REJECTED</option></select>
-                <input id="memoryQueryFilter" type="text" placeholder="Buscar por conceito/tag" />
-                <button id="memorySearchBtn" class="ghost">Buscar</button>
-              </div>
-            </div>
-            <div id="memoryStatusMini" class="file-info"></div>
-          </div>
-          <div id="memoryGallery" class="memory-gallery"></div>
-        </div>
-      </div>
-    </section>
-
-    <section class="panel experimental-panel">
-      <h2>Arquitetura V0.10 · Browser-first</h2>
-      <div class="roadmap-grid">
-        <div><strong>VERCEL</strong><span>Distribui o aplicativo e os arquivos; não executa o refinador pesado.</span></div>
-        <div><strong>NAVEGADOR</strong><span>Detecta WebGPU, baixa/cacheia o modelo e executa inferência localmente.</span></div>
-        <div><strong>COMPOSER + GUIA</strong><span>Continuam organizando referências, cena e regiões a preservar.</span></div>
-        <div><strong>REFINADOR WEB</strong><span>Contrato independente do backend: hoje Swin2SR MVP; depois refinador generativo guiado.</span></div>
-      </div>
-    </section>
-  </div>
-
-  <script type="module" src="/app.js"></script>
+<div class="actions wrap">
+<button class="ghost" id="cancelBenchmarkBtn">Cancelar benchmark</button>
+<button class="ghost" id="refreshRefinerBtn">Atualizar status</button>
+</div>
+<div class="meta" id="benchmarkMeta">LEGADO: estes testes exigem instalação local. Para a V0.10, use o benchmark WebGPU do painel Browser acima.</div>
+<div class="benchmark-verdict empty" id="benchmarkVerdict">Nenhum benchmark executado.</div>
+<div class="queue-table-wrap benchmark-table-wrap">
+<table class="queue-table">
+<thead><tr><th>#</th><th>Status</th><th>Composer</th><th>Refinador</th><th>Total</th><th>RAM motor</th><th>Antes / Depois</th></tr></thead>
+<tbody id="benchmarkBody"></tbody>
+</table>
+</div>
+</section>
+<section class="panel collect-panel view-panel view-library primary-workspace">
+<div class="engine-head">
+<div>
+<h2>Biblioteca visual</h2>
+<p class="muted">Referências salvas para reutilizar nas próximas imagens.</p>
+</div>
+</div>
+<div class="collector-grid">
+<details class="library-tools"><summary>Adicionar referências</summary><div class="collector-box">
+<label>Consulta manual</label>
+<textarea id="collectQuery" placeholder="Ex.: garfo cartoon, forest background, ninja outfit" rows="3">garfo cartoon</textarea>
+<div class="inline-fields collect-config two-row">
+<div>
+<label>Tipo</label>
+<select id="collectType">
+<option selected="" value="object">OBJETO</option>
+<option value="background">FUNDO</option>
+<option value="pose">POSE</option>
+<option value="face">ROSTO/EXPRESSÃO</option>
+<option value="outfit">ROUPA</option>
+<option value="character">PERSONAGEM</option>
+<option value="other">OUTRO</option>
+</select>
+</div>
+<div>
+<label>Salvar top N</label>
+<input id="collectSaveLimit" max="20" min="1" type="number" value="5"/>
+</div>
+<div>
+<label>Por fonte</label>
+<input id="collectPerProvider" max="30" min="1" type="number" value="8"/>
+</div>
+<div>
+<label>Aprovar automaticamente</label>
+<select id="collectAutoApprove">
+<option selected="" value="false">NÃO</option>
+<option value="true">SIM</option>
+</select>
+</div>
+</div>
+<div class="actions wrap">
+<button id="collectBtn">Coletar agora</button>
+<button class="ghost" id="refreshMemoryBtn">Atualizar memória</button>
+</div>
+<div class="meta" id="collectMeta"></div>
+<div class="setup-note small-note" id="collectSummary">Os resultados do coletor aparecerão aqui.</div>
+</div></details>
+<div class="collector-box">
+<div class="memory-head">
+<div>
+<label>Filtrar memória</label>
+<div class="memory-filters">
+<select id="memoryTypeFilter">
+<option value="">TODOS</option>
+<option value="object">OBJETO</option>
+<option value="background">FUNDO</option>
+<option value="pose">POSE</option>
+<option value="face">ROSTO</option>
+<option value="outfit">ROUPA</option>
+<option value="character">PERSONAGEM</option>
+<option value="lighting">ILUMINAÇÃO</option>
+<option value="camera">CÂMERA</option>
+<option value="weather">CLIMA</option>
+<option value="texture">TEXTURA</option>
+<option value="style">ESTILO</option>
+<option value="composition">COMPOSIÇÃO</option>
+</select>
+<select id="memoryStateFilter"><option value="">TODAS</option><option value="candidates">EM ANÁLISE</option><option value="approved">APROVADAS</option><option value="rejected">REPROVADAS</option></select>
+<input id="memoryQueryFilter" placeholder="Buscar na biblioteca" type="text"/>
+<button class="ghost" id="memorySearchBtn">Buscar</button>
+</div>
+</div>
+<div class="file-info" id="memoryStatusMini"></div>
+</div>
+<div class="memory-gallery" id="memoryGallery"></div>
+</div>
+</div>
+</section>
+<section class="panel experimental-panel view-panel view-advanced technical-panel">
+<h2>Arquitetura V0.10.1 · Browser-first</h2>
+<div class="roadmap-grid">
+<div><strong>VERCEL</strong><span>Distribui o aplicativo e os arquivos; não executa o refinador pesado.</span></div>
+<div><strong>NAVEGADOR</strong><span>Detecta WebGPU, baixa/cacheia o modelo e executa inferência localmente.</span></div>
+<div><strong>COMPOSER + GUIA</strong><span>Continuam organizando referências, cena e regiões a preservar.</span></div>
+<div><strong>REFINADOR WEB</strong><span>Contrato independente do backend: hoje Swin2SR MVP; depois refinador generativo guiado.</span></div>
+</div>
+</section>
+</div>
+<script src="/app.js" type="module"></script>
 </body>
 </html>

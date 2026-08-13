@@ -389,3 +389,116 @@ button.ghost, .ghost {
   .browser-status-grid { grid-template-columns: repeat(2, 1fr); }
   .browser-config { grid-template-columns: 1fr; }
 }
+
+/* V0.10.1 · interface simples, produção-first */
+body { min-height: 100vh; }
+.app-shell { max-width: 1180px; padding: 22px 24px 44px; }
+.topbar { align-items: center; margin-bottom: 14px; }
+.brand-block h1 { font-size: 24px; letter-spacing: -0.02em; margin: 0 0 4px; }
+.brand-block p { font-size: 14px; }
+.compact-status .sub-badge { display: none; }
+.compact-status .badge { padding: 7px 11px; font-size: 12px; }
+
+.main-nav {
+  display: flex;
+  gap: 6px;
+  padding: 5px;
+  margin: 0 0 18px;
+  width: fit-content;
+  background: rgba(255,255,255,.035);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 14px;
+}
+.main-nav .nav-btn {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  border-radius: 10px;
+  padding: 9px 16px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.main-nav .nav-btn.active { background: var(--panel-2); color: var(--text); box-shadow: 0 2px 10px rgba(0,0,0,.2); }
+
+.workspace-root { display: block; }
+.view-panel { display: none; }
+body[data-view="create"] .view-create,
+body[data-view="batch"] .view-batch,
+body[data-view="library"] .view-library,
+body[data-view="advanced"] .view-advanced { display: block; }
+
+.primary-workspace {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 24px;
+  border-color: rgba(83,166,255,.28);
+}
+.primary-workspace h2 { font-size: 22px; margin-bottom: 6px; }
+.section-intro { margin: 0 0 18px; color: var(--muted); line-height: 1.5; }
+.simple-engine-strip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  margin: -6px 0 16px;
+  border-radius: 999px;
+  background: rgba(56,217,150,.08);
+  border: 1px solid rgba(56,217,150,.22);
+  color: #c9f6e3;
+  font-size: 12px;
+}
+.status-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--good); box-shadow: 0 0 0 4px rgba(56,217,150,.08); }
+.primary-workspace textarea { font-size: 15px; min-height: 150px; }
+.primary-workspace .actions { margin-top: 14px; }
+.primary-action { min-width: 150px; }
+.result-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 18px; }
+.result-toolbar strong { font-size: 14px; }
+.small-action { padding: 8px 12px; font-size: 12px; }
+.primary-workspace .preview-box { min-height: 380px; background: rgba(255,255,255,.018); }
+.primary-workspace .preview-box img { max-height: 620px; object-fit: contain; }
+
+/* Rotina normal esconde controles técnicos. Eles continuam disponíveis na aba Avançado. */
+body:not([data-view="advanced"]) .advanced-only { display: none !important; }
+
+/* Biblioteca em modo leitura-first */
+body[data-view="library"] .collector-grid { grid-template-columns: 1fr; }
+body[data-view="library"] .memory-head { align-items: center; }
+body[data-view="library"] .memory-filters { grid-template-columns: 180px 180px minmax(220px,1fr) auto; }
+
+/* Avançado continua completo, porém visualmente secundário. */
+body[data-view="advanced"] .technical-panel,
+body[data-view="advanced"] .advanced-intro { max-width: 1100px; margin: 0 auto 14px; }
+body[data-view="advanced"] .advanced-only { display: initial; }
+.advanced-intro { border-style: dashed; box-shadow: none; }
+
+@media (max-width: 780px) {
+  .app-shell { padding: 14px 12px 34px; }
+  .main-nav { width: 100%; overflow-x: auto; }
+  .main-nav .nav-btn { flex: 1; min-width: 90px; padding: 9px 10px; }
+  .primary-workspace { padding: 18px 14px; }
+  .primary-workspace .preview-box { min-height: 280px; }
+  body[data-view="library"] .memory-filters { grid-template-columns: 1fr; }
+  .compact-status { display: none; }
+}
+.library-tools {
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 14px;
+  background: rgba(255,255,255,.02);
+  margin-bottom: 14px;
+}
+.library-tools > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 12px 14px;
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 13px;
+}
+.library-tools > summary::-webkit-details-marker { display: none; }
+.library-tools[open] > summary { color: var(--text); border-bottom: 1px solid rgba(255,255,255,.07); }
+.library-tools > .collector-box { border: 0; border-radius: 0 0 14px 14px; }
+body[data-view="library"] .collector-grid { display: block; }
+.simple-options { display: grid; grid-template-columns: minmax(180px, 260px); gap: 10px; margin-top: 14px; }
+.simple-options label { margin-bottom: 6px; font-size: 12px; }
+.simple-options select { padding: 10px 12px; }

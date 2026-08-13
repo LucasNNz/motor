@@ -1,3 +1,7 @@
+# Corvo Image Engine V0.10.1 — Browser-first · Interface simples
+
+**Mudança de produto:** a interface principal agora é produção-first, com quatro áreas: Criar, Lote, Biblioteca e Avançado. Backend, WebGPU/WASM, modelos, benchmark, execução guiada e controles legados ficam fora do fluxo principal.
+
 # Corvo Image Engine V0.10 — Browser-first + WebGPU
 
 A V0.10 muda a arquitetura principal do projeto.
