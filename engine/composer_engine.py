@@ -53,6 +53,8 @@ class Plan:
                 "concept": asset.get("concept"),
                 "title": asset.get("title"),
                 "anchors": asset.get("anchors"),
+                "composition_suitability": asset.get("composition_suitability"),
+                "visual_metrics": asset.get("visual_metrics"),
             }
         return {
             "mode": self.mode,
@@ -339,6 +341,23 @@ class ComposerEngine:
                 mask = magnitude.point(lambda v: 0 if v < 18 else (255 if v > 52 else int((v - 18) / 34 * 255)))
                 mask = mask.filter(ImageFilter.GaussianBlur(radius=0.7))
                 item.putalpha(mask)
+        # Normalize transparent/studio references around the actual subject. This is
+        # essential for guide semantics such as subject_scale=62%: the scale must apply
+        # to the object, not to the source photo canvas/margins.
+        alpha = item.getchannel('A')
+        bbox = alpha.getbbox()
+        if bbox:
+            left, top, right, bottom = bbox
+            bw, bh = max(1, right-left), max(1, bottom-top)
+            pad_x = max(1, int(bw * 0.035)); pad_y = max(1, int(bh * 0.035))
+            crop_box = (max(0, left-pad_x), max(0, top-pad_y), min(item.width, right+pad_x), min(item.height, bottom+pad_y))
+            cropped = item.crop(crop_box)
+            if cropped.width > 2 and cropped.height > 2 and cropped.size != item.size:
+                item = cropped
+                scale = min(pw / item.width, ph / item.height)
+                target = (max(1, int(item.width * scale)), max(1, int(item.height * scale)))
+                item = item.resize(target, Image.Resampling.LANCZOS)
+
         dx = px + (pw - item.width) // 2
         dy = py + (ph - item.height) // 2
         if shadow:
@@ -438,8 +457,10 @@ class ComposerEngine:
                 'id': item['id'], 'category': item.get('type', category), 'tags': item.get('tags', []),
                 'file': item.get('local_path'), 'local_path': item.get('local_path'), 'source': item.get('source', 'library'),
                 'quality_score': item.get('quality_score', 0), 'relevance_score': item.get('relevance_score', 0),
-                'approved': True, 'concept': item.get('concept'), 'title': item.get('title'),
+                'approved': item.get('status') == 'approved' or bool(item.get('approved')), 'concept': item.get('concept'), 'title': item.get('title'),
                 'compatible_pose': item.get('metadata', {}).get('compatible_pose'), 'anchors': item.get('metadata', {}).get('anchors'),
+                'composition_suitability': item.get('metadata', {}).get('composition_suitability'),
+                'visual_metrics': item.get('metadata', {}).get('visual_metrics'),
             }
         asset, confidence = self.bank.best(category, terms, default_id=default_id)
         if confidence <= 0 and default_id is None:

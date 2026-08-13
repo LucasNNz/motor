@@ -112,9 +112,21 @@ class CollectorService:
                     rejected.append({'candidate': cand, 'reason': reason, 'library_id': result.get('item', {}).get('id')}); continue
 
                 batch_hashes.append(phash)
+                composition_score = float(inspection.get('isolation_score') or 0.0)
+                if cfg.get('prefer_light_background'):
+                    composition_score = min(1.0, composition_score * 0.78 + float(inspection.get('border_brightness') or 0.0) * 0.22)
+                metadata['composition_suitability'] = round(composition_score, 4)
+                metadata['visual_metrics'] = {
+                    'isolation_score': inspection.get('isolation_score'),
+                    'border_uniformity': inspection.get('border_uniformity'),
+                    'border_brightness': inspection.get('border_brightness'),
+                    'edge_density': inspection.get('edge_density'),
+                    'border_texture': inspection.get('border_texture'),
+                    'border_cleanliness': inspection.get('border_cleanliness'),
+                }
                 kept.append({'candidate': cand, 'image_bytes': image_bytes, 'inspection': {k: v for k, v in inspection.items() if k != 'image'},
-                             'quality_score': qscore, 'relevance_score': rscore,
-                             'combined_score': round(qscore * 0.45 + rscore * 0.55, 4), 'metadata': metadata})
+                             'quality_score': qscore, 'relevance_score': rscore, 'composition_score': composition_score,
+                             'combined_score': round(qscore * 0.25 + rscore * 0.35 + composition_score * 0.40, 4), 'metadata': metadata})
             except Exception as exc:
                 rejected.append({'candidate': cand, 'reason': str(exc)})
 
@@ -175,8 +187,9 @@ class CollectorService:
             'top_candidates': [{
                 'provider': x['candidate'].get('provider'), 'title': x['candidate'].get('title'),
                 'source_url': x['candidate'].get('source_url'), 'image_url': x['candidate'].get('image_url'),
-                'quality_score': x['quality_score'], 'relevance_score': x['relevance_score'], 'combined_score': x['combined_score'],
+                'quality_score': x['quality_score'], 'relevance_score': x['relevance_score'], 'composition_score': x.get('composition_score'), 'combined_score': x['combined_score'],
                 'width': x['inspection']['width'], 'height': x['inspection']['height'],
+                'isolation_score': x['inspection'].get('isolation_score'), 'border_uniformity': x['inspection'].get('border_uniformity'),
             } for x in kept[:20]],
         }
 

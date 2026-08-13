@@ -18,7 +18,23 @@ from .reprocessor import regional_reprocessor
 
 class GuidedExecutionService:
     def _filter_config(self, guide: ParsedGuide) -> dict[str, Any]:
-        return dict(guide.first('FILTER') or {})
+        # FILTER remains the explicit source of technical thresholds. A few visual
+        # constraints are deterministically projected from the guide so the engine
+        # actually executes directives such as SUBJECT isolated=true instead of merely
+        # storing them as prose. No semantic inference/LLM is involved here.
+        cfg = dict(guide.first('FILTER') or {})
+        subject = dict(guide.first('SUBJECT') or {})
+        negative = dict(guide.first('NEGATIVE') or {})
+        background = dict(guide.first('BACKGROUND') or {})
+        if subject.get('isolated') is True:
+            cfg.setdefault('require_isolated', True)
+            cfg.setdefault('min_isolation_score', 0.68)
+        if negative.get('busy_background') is True:
+            cfg.setdefault('reject_busy_background', True)
+        brightness = str(background.get('brightness') or '').strip().lower()
+        if brightness in {'light', 'claro', 'bright'}:
+            cfg.setdefault('prefer_light_background', True)
+        return cfg
 
     def _search_spec(self, section: str, block: dict[str, Any]) -> dict[str, Any]:
         type_name = TYPE_BY_SEARCH_SECTION.get(section, 'other')

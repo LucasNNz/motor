@@ -253,6 +253,7 @@ class MemoryManager:
             score += float(item.get('quality_score') or 0) * 1.2
             score += float(item.get('relevance_score') or 0) * 1.4
             score += float(item.get('success_rate') or 0) * 1.8
+            score += float((item.get('metadata') or {}).get('composition_suitability') or 0) * 2.2
             if item.get('status') == 'approved' or item.get('approved'): score += 0.8
             if item.get('preferred'): score += 2.5
             if score > 0: scored.append((score, item))
