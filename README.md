@@ -44,3 +44,6 @@ O modelo browser atual ainda é o gargalo para redesenho generativo forte; o res
 - `[OUTPUT] width`, `height`, `size` e `aspect_ratio` passam a controlar a resolução guiada.
 - Valores semânticos de composição como `subject_scale=large` agora são resolvidos deterministicamente.
 - `[LIGHTING]` simples é aplicado pelo Composer quando não há uma referência visual de iluminação.
+
+## V0.12.9 — exportação browser-first
+No fluxo principal de produção, `Exportar operação` é montado no navegador. Isso evita depender de `/tmp` entre requisições Vercel e garante que o ZIP contenha o PNG refinado final visto pelo usuário.

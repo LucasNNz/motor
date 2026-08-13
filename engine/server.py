@@ -53,7 +53,7 @@ STATIC_DIR = BASE_DIR / "static"
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 
-app = FastAPI(title="Corvo Image Engine", version="0.12.8")
+app = FastAPI(title="Corvo Image Engine", version="0.12.9")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -102,7 +102,7 @@ def get_system_info():
         "diffusers_installed": False,
         "recommended_backend": "composer",
         "notes": [
-            "V0.12.8 é guia-first e browser-first: o refinador principal é executado no navegador via WebGPU/WASM. Backends nativos locais são apenas legado opcional."
+            "V0.12.9 é guia-first e browser-first: o refinador principal é executado no navegador via WebGPU/WASM. Backends nativos locais são apenas legado opcional."
         ],
     }
     try:
@@ -150,14 +150,14 @@ def _prompt_missing_map(prompt: str) -> list[dict[str, str]]:
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "jobs": len(jobs), "version": "0.12.8", **runtime_status()}
+    return {"ok": True, "jobs": len(jobs), "version": "0.12.9", **runtime_status()}
 
 
 @app.get("/api/deployment/status")
 def deployment_status():
     data = runtime_status()
     data.update({
-        "version": "0.12.8",
+        "version": "0.12.9",
         "sdcpp_local_available": not IS_VERCEL,
         "persistent_library": not IS_VERCEL,
         "note": (
@@ -173,7 +173,7 @@ def deployment_status():
 @app.get("/api/browser/config")
 def browser_config():
     return {
-        "version": "0.12.8",
+        "version": "0.12.9",
         "architecture": "browser_first",
         "execution": {
             "preferred": "webgpu",
@@ -395,7 +395,43 @@ def generate_guided(req: GuidedGenerateRequest):
         )
         image = result.pop('image')
         result['image_base64'] = image_to_base64_png(image)
-        result['export_url'] = f"/api/operations/{result['operation_id']}/export"
+
+        # Vercel /tmp is ephemeral and a later export request may hit a different
+        # function instance. Capture the exact reference files during this SAME
+        # request so the browser can build the complete operation ZIP locally.
+        operation_id = result['operation_id']
+        reference_files = []
+        root = operation_manager.root_for(operation_id)
+        for ref in result.get('references') or []:
+            rel = ref.get('operation_copy')
+            if not rel:
+                continue
+            path = root / rel
+            try:
+                if path.exists() and path.is_file():
+                    ext = path.suffix.lower()
+                    mime = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp'}.get(ext, 'application/octet-stream')
+                    reference_files.append({
+                        'id': ref.get('id'),
+                        'label': ref.get('label'),
+                        'name': path.name,
+                        'relative_path': rel,
+                        'mime_type': mime,
+                        'image_base64': base64.b64encode(path.read_bytes()).decode('utf-8'),
+                    })
+            except Exception:
+                # Export metadata remains useful even if one copied reference
+                # cannot be embedded. Generation must not fail because of ZIP prep.
+                continue
+
+        result['client_export'] = {
+            'mode': 'browser',
+            'version': '0.12.9',
+            'reference_files': reference_files,
+        }
+        # Kept for legacy/local diagnostic panels only. The production Create
+        # flow no longer depends on this URL.
+        result['export_url'] = f"/api/operations/{operation_id}/export"
         return result
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -438,7 +474,43 @@ def operation_reprocess(operation_id: str, req: OperationReprocessRequest):
         )
         image = result.pop('image')
         result['image_base64'] = image_to_base64_png(image)
-        result['export_url'] = f"/api/operations/{result['operation_id']}/export"
+
+        # Vercel /tmp is ephemeral and a later export request may hit a different
+        # function instance. Capture the exact reference files during this SAME
+        # request so the browser can build the complete operation ZIP locally.
+        operation_id = result['operation_id']
+        reference_files = []
+        root = operation_manager.root_for(operation_id)
+        for ref in result.get('references') or []:
+            rel = ref.get('operation_copy')
+            if not rel:
+                continue
+            path = root / rel
+            try:
+                if path.exists() and path.is_file():
+                    ext = path.suffix.lower()
+                    mime = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp'}.get(ext, 'application/octet-stream')
+                    reference_files.append({
+                        'id': ref.get('id'),
+                        'label': ref.get('label'),
+                        'name': path.name,
+                        'relative_path': rel,
+                        'mime_type': mime,
+                        'image_base64': base64.b64encode(path.read_bytes()).decode('utf-8'),
+                    })
+            except Exception:
+                # Export metadata remains useful even if one copied reference
+                # cannot be embedded. Generation must not fail because of ZIP prep.
+                continue
+
+        result['client_export'] = {
+            'mode': 'browser',
+            'version': '0.12.9',
+            'reference_files': reference_files,
+        }
+        # Kept for legacy/local diagnostic panels only. The production Create
+        # flow no longer depends on this URL.
+        result['export_url'] = f"/api/operations/{operation_id}/export"
         return result
     except KeyError:
         raise HTTPException(status_code=404, detail='Operação pai ou resultado não encontrado')

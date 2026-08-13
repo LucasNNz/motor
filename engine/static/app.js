@@ -129,6 +129,8 @@ let browserSelectedSource = null;
 let browserSelectedLabel = null;
 let browserBatchCancelled = false;
 let browserBatchObjectUrls = [];
+let currentSingleOperationBundle = null;
+let currentSingleOperationZipUrl = null;
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -830,6 +832,120 @@ function setSingleDownload(dataUrl, fileName = 'corvo_imagem.png') {
   else singleDownloadLink.classList.add('disabled');
 }
 
+function stripDataUrlPrefix(dataUrl) {
+  const value = String(dataUrl || '');
+  const comma = value.indexOf(',');
+  return comma >= 0 ? value.slice(comma + 1) : value;
+}
+
+function operationRefLogRows(rows = []) {
+  return (rows || []).map((ref) => {
+    const copy = { ...ref };
+    delete copy.image_base64;
+    return copy;
+  });
+}
+
+async function exportCurrentSingleOperation() {
+  const bundle = currentSingleOperationBundle;
+  if (!bundle) throw new Error('Nenhuma operação guiada pronta para exportar.');
+  const operationId = bundle.operation_id || `operacao_${Date.now()}`;
+  const originalLabel = singleOperationExportLink?.textContent || 'Exportar operação';
+  if (singleOperationExportLink) {
+    singleOperationExportLink.classList.add('disabled');
+    singleOperationExportLink.textContent = 'Montando ZIP...';
+  }
+  try {
+    const mod = await import('https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm');
+    const JSZip = mod.default || mod;
+    const zip = new JSZip();
+    const data = bundle.server || {};
+    const refined = bundle.refined || {};
+    const refinerLog = {
+      backend: 'browser',
+      id: refined.id || null,
+      device: refined.device || null,
+      model: refined.model || null,
+      strategy: refined.strategy || null,
+      change_score: refined.change_score ?? null,
+      model_difference: refined.model_difference ?? null,
+      duration_ms: refined.duration_ms ?? null,
+      note: refined.note || '',
+      guided: refined.guided || false,
+      guide_sections: refined.guide_sections || [],
+      guide_refine_strength: refined.guide_refine_strength ?? null,
+      reference_count: refined.reference_count ?? (data.references || []).length,
+      unsupported_guided_directives: refined.unsupported_guided_directives || [],
+    };
+    const totalMs = Number(data.timings?.total_ms || 0) + Number(refined.duration_ms || 0);
+    const now = new Date().toISOString();
+
+    zip.file('pedido_original.txt', bundle.prompt || '');
+    zip.file('guia_auxiliar.txt', bundle.guide_text || '');
+    zip.file('resultado_final.png', stripDataUrlPrefix(bundle.final_data_url), { base64: true });
+    zip.file('etapas/composicao_base.png', stripDataUrlPrefix(bundle.base_data_url), { base64: true });
+    zip.file('etapas/antes_refinamento.png', stripDataUrlPrefix(bundle.base_data_url), { base64: true });
+    zip.file('etapas/depois_refinamento.png', stripDataUrlPrefix(bundle.final_data_url), { base64: true });
+
+    for (const file of (data.client_export?.reference_files || [])) {
+      if (!file?.image_base64) continue;
+      const safeName = String(file.name || `${file.id || 'referencia'}.png`).replace(/[\/:*?"<>|]+/g, '_');
+      zip.file(`referencias_usadas/${safeName}`, file.image_base64, { base64: true });
+    }
+
+    zip.file('logs/buscas.json', JSON.stringify(data.searches || [], null, 2));
+    zip.file('logs/referencias.json', JSON.stringify({ used: operationRefLogRows(data.references || []) }, null, 2));
+    zip.file('logs/composicao.json', JSON.stringify(data.composition || {}, null, 2));
+    zip.file('logs/refinador.json', JSON.stringify(refinerLog, null, 2));
+    zip.file('logs/condicionamento.json', JSON.stringify({ requested: false, browser_first: true }, null, 2));
+    zip.file('logs/tempos.json', JSON.stringify({
+      collect_ms: data.timings?.collect_ms || 0,
+      composer_ms: data.timings?.composer_ms || 0,
+      server_refiner_ms: data.timings?.refiner_ms || 0,
+      browser_refiner_ms: refined.duration_ms || 0,
+      total_ms: totalMs,
+    }, null, 2));
+    zip.file('logs/execucao.json', JSON.stringify({
+      ...(data.execution || {}),
+      export_mode: 'browser',
+      export_version: '0.12.9',
+      final_result_owner: 'browser',
+    }, null, 2));
+    zip.file('logs/erros.json', JSON.stringify([], null, 2));
+    zip.file('logs/avaliacao.json', JSON.stringify({ approved: null, scores: {}, notes: '' }, null, 2));
+    zip.file('logs/operacao.json', JSON.stringify({
+      operation_id: operationId,
+      status: 'done',
+      kind: 'guided_generation_browser_export',
+      exported_at: now,
+      server_tmp_dependency: false,
+    }, null, 2));
+    zip.file('diagnostico.txt', 'Execução guiada concluída. ZIP montado no navegador para evitar dependência do /tmp efêmero da Vercel.');
+
+    const zipBlob = await zip.generateAsync({
+      type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 },
+    }, (meta) => {
+      if (singleOperationExportLink) singleOperationExportLink.textContent = `Montando ZIP · ${Math.round(meta.percent)}%`;
+    });
+
+    if (currentSingleOperationZipUrl) URL.revokeObjectURL(currentSingleOperationZipUrl);
+    currentSingleOperationZipUrl = URL.createObjectURL(zipBlob);
+    const a = document.createElement('a');
+    a.href = currentSingleOperationZipUrl;
+    a.download = `${operationId}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    return { operation_id: operationId, bytes: zipBlob.size };
+  } finally {
+    if (singleOperationExportLink) {
+      singleOperationExportLink.textContent = originalLabel;
+      singleOperationExportLink.classList.remove('disabled');
+      singleOperationExportLink.href = '#';
+    }
+  }
+}
+
 async function refineSelectedInBrowser({ source = null, label = null, updateGuided = false, guideText = '', referenceCount = 0 } = {}) {
   const actualSource = source || browserSelectedSource;
   if (!actualSource) {
@@ -955,7 +1071,7 @@ async function runBrowserBatch(text) {
   batchSummary.textContent = `LOTE BROWSER · preparando refinador uma única vez para ${items.length} imagem(ns)...`;
   const prepared = await prepareBrowserRefiner();
   const manifest = {
-    version: '0.12.8',
+    version: '0.12.9',
     execution: 'browser_client',
     generated_at: new Date().toISOString(),
     model: browserModel.value || DEFAULT_MODEL,
@@ -1105,6 +1221,7 @@ generateOneBtn.addEventListener('click', async () => {
     return;
   }
   generateOneBtn.disabled = true;
+  currentSingleOperationBundle = null;
   setSingleDownload(null);
   if (singleOperationExportLink) { singleOperationExportLink.classList.add('disabled'); singleOperationExportLink.href = '#'; }
   singleMeta.className = 'meta';
@@ -1135,25 +1252,17 @@ generateOneBtn.addEventListener('click', async () => {
       if (!refined) throw new Error('O refinador do navegador não entregou resultado.');
       singlePreview.src = refined.dataUrl;
       setSingleDownload(refined.dataUrl, `corvo_${data.operation_id}.png`);
-      try {
-        await api(`/api/operations/${encodeURIComponent(data.operation_id)}/browser-finalize`, {
-          method: 'POST',
-          body: JSON.stringify({
-            image_base64: String(refined.dataUrl).split(',', 2)[1],
-            refiner_metadata: {
-              id: refined.id, device: refined.device, model: refined.model, strategy: refined.strategy,
-              change_score: refined.change_score, model_difference: refined.model_difference,
-              duration_ms: refined.duration_ms, note: refined.note,
-              guided: refined.guided, guide_sections: refined.guide_sections, guide_refine_strength: refined.guide_refine_strength,
-              reference_count: refined.reference_count, unsupported_guided_directives: refined.unsupported_guided_directives,
-            },
-          }),
-        });
-      } catch (syncErr) {
-        console.warn('Falha ao sincronizar resultado web com a operação:', syncErr);
-      }
-      if (singleOperationExportLink && data.export_url) {
-        singleOperationExportLink.href = data.export_url;
+      currentSingleOperationBundle = {
+        operation_id: data.operation_id,
+        prompt,
+        guide_text: guideText,
+        base_data_url: baseDataUrl,
+        final_data_url: refined.dataUrl,
+        server: data,
+        refined,
+      };
+      if (singleOperationExportLink) {
+        singleOperationExportLink.href = '#';
         singleOperationExportLink.classList.remove('disabled');
       }
       const change = (Math.max(0.1, Number(refined.change_score || 0) * 100)).toFixed(1);
@@ -1338,11 +1447,25 @@ guidedApproveBtn.addEventListener('click', () => guidedEvaluate(true));
 guidedRejectBtn.addEventListener('click', () => guidedEvaluate(false));
 guidedSaveEvalBtn.addEventListener('click', () => guidedEvaluate(null));
 guidedReprocessBtn.addEventListener('click', reprocessGuidedRegion);
+if (singleOperationExportLink) {
+  singleOperationExportLink.addEventListener('click', async (event) => {
+    event.preventDefault();
+    if (singleOperationExportLink.classList.contains('disabled')) return;
+    const previousMeta = singleMeta.textContent;
+    try {
+      singleMeta.textContent = 'Montando ZIP da operação no navegador...';
+      const result = await exportCurrentSingleOperation();
+      singleMeta.textContent = `${previousMeta} · ZIP ${formatBytes(result.bytes)} pronto`;
+    } catch (err) {
+      singleMeta.textContent = `Erro ao montar ZIP no navegador: ${err.message}`;
+    }
+  });
+}
 
 Promise.all([refreshHealth(), refreshComposerStatus(false), refreshMemoryGallery(), refreshRefinerStatus(), refreshBrowserRuntime()]).then(toggleBackendFields);
 setInterval(refreshHealth, 10000);
 
-// V0.12.8 · geometria guiada · produção guiada
+// V0.12.9 · exportação de operação no navegador · produção guiada
 for (const button of document.querySelectorAll('.nav-btn')) {
   button.addEventListener('click', () => {
     const view = button.dataset.view || 'create';
