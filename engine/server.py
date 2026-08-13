@@ -42,15 +42,16 @@ from .guided_service import guided_service
 from .anatomy_locator import anatomy_locator
 from .operation_manager import operation_manager
 from .utils import build_zip, parse_prompt_lines
+from .runtime_paths import OUTPUTS_DIR as RUNTIME_OUTPUTS_DIR, BENCHMARKS_DIR, IS_VERCEL, runtime_status
 
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
-OUTPUTS_DIR = PROJECT_DIR / "outputs"
+OUTPUTS_DIR = RUNTIME_OUTPUTS_DIR
 STATIC_DIR = BASE_DIR / "static"
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 
-app = FastAPI(title="Corvo Image Engine", version="0.9.0")
+app = FastAPI(title="Corvo Image Engine", version="0.10.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -99,7 +100,7 @@ def get_system_info():
         "diffusers_installed": False,
         "recommended_backend": "composer",
         "notes": [
-            "CUDA não é obrigatório. A V0.9 adiciona condicionamento visual por referências e anatomia opcional, mantendo os fallbacks da V0.8."
+            "V0.10 é browser-first: o refinador principal é executado no navegador via WebGPU/WASM. Backends nativos locais são apenas legado opcional."
         ],
     }
     try:
@@ -147,7 +148,48 @@ def _prompt_missing_map(prompt: str) -> list[dict[str, str]]:
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "jobs": len(jobs), "version": "0.9.0"}
+    return {"ok": True, "jobs": len(jobs), "version": "0.10.0", **runtime_status()}
+
+
+@app.get("/api/deployment/status")
+def deployment_status():
+    data = runtime_status()
+    data.update({
+        "version": "0.10.0",
+        "sdcpp_local_available": not IS_VERCEL,
+        "persistent_library": not IS_VERCEL,
+        "note": (
+            "No Vercel, a interface/Composer podem executar com armazenamento temporário; "
+            "o refinador principal roda no navegador; stable-diffusion.cpp permanece apenas como modo legado local."
+            if IS_VERCEL else
+            "Modo local: biblioteca persistente disponível; refinador browser continua sendo o caminho principal, com SD.CPP legado opcional."
+        ),
+    })
+    return data
+
+
+@app.get("/api/browser/config")
+def browser_config():
+    return {
+        "version": "0.10.0",
+        "architecture": "browser_first",
+        "execution": {
+            "preferred": "webgpu",
+            "fallback": "wasm",
+            "server_inference_required": False,
+        },
+        "mvp_refiner": {
+            "runtime": "transformers.js",
+            "runtime_version": "3.8.1",
+            "task": "image-to-image",
+            "model": "Xenova/swin2SR-lightweight-x2-64",
+            "purpose": "browser inference proof + detail reconstruction/super-resolution",
+            "generative_guided": False,
+        },
+        "cache": "browser_cache_api",
+        "local_install_required": False,
+        "legacy_local_backends": ["sdcpp_local", "diffusers_cpu", "automatic1111"],
+    }
 
 
 @app.get("/api/system")
@@ -175,6 +217,8 @@ def engine_status():
 
 @app.post("/api/engine/start")
 def engine_start():
+    if IS_VERCEL:
+        raise HTTPException(status_code=503, detail="stable-diffusion.cpp é um processo local e não pode ser iniciado dentro de uma Vercel Function. Use o modo local ou um endpoint remoto.")
     try:
         return sdcpp_manager.start()
     except Exception as exc:
@@ -271,7 +315,7 @@ def memory_asset(item_id: str):
     item = memory_manager.by_id.get(item_id)
     if not item:
         raise HTTPException(status_code=404, detail='Item não encontrado')
-    path = PROJECT_DIR / item.get('local_path')
+    path = memory_manager.path_for(item)
     if not path.exists():
         raise HTTPException(status_code=404, detail='Arquivo local não encontrado')
     return FileResponse(path, media_type='image/png')
@@ -430,7 +474,18 @@ def refiner_status():
         if key in {'init_image', 'control_image', 'ip_adapter_image', 'ref_images'}
     }
     return {
-        'light_cpu': {'available': True, 'generative': False, 'conditioning': False},
+        'browser_refiner': {
+            'available': True,
+            'execution_location': 'client_browser',
+            'preferred_device': 'webgpu',
+            'fallback_device': 'wasm',
+            'runtime': 'transformers.js',
+            'runtime_version': '3.8.1',
+            'model': 'Xenova/swin2SR-lightweight-x2-64',
+            'generative_guided': False,
+            'local_install_required': False,
+        },
+        'light_cpu': {'available': True, 'generative': False, 'conditioning': False, 'legacy': True},
         'sdcpp_img2img': {
             'available': bool(engine.get('engine_installed') and engine.get('model_installed')),
             'generative': True,
@@ -479,7 +534,7 @@ def cancel_refiner_benchmark(job_id: str):
 @app.get("/api/refiner/benchmark/{job_id}/image/{filename}")
 def refiner_benchmark_image(job_id: str, filename: str):
     safe = Path(filename).name
-    path = PROJECT_DIR / 'outputs' / 'refiner_benchmarks' / job_id / safe
+    path = BENCHMARKS_DIR / job_id / safe
     if not path.exists():
         raise HTTPException(status_code=404, detail='Imagem de benchmark não encontrada')
     return FileResponse(path, media_type='image/png')
@@ -563,7 +618,7 @@ def run_batch(job_id: str):
                 row = {'label': label, 'id': ref.get('id'), 'source': ref.get('source'), 'file': ref.get('file')}
                 lib_item = memory_manager.by_id.get(ref.get('id'))
                 if lib_item:
-                    source_path = PROJECT_DIR / lib_item.get('local_path')
+                    source_path = memory_manager.path_for(lib_item)
                     library_ids.append(ref.get('id'))
                 else:
                     asset = next((a for a in composer_engine.bank.assets if a.get('id') == ref.get('id')), None)
@@ -633,8 +688,13 @@ def start_batch(req: BatchStartRequest):
     jobs[job_id] = status
     job_cancel_flags[job_id] = False
 
-    thread = threading.Thread(target=run_batch, args=(job_id,), daemon=True)
-    thread.start()
+    if IS_VERCEL:
+        if req.backend not in {"mock", "composer", "composer_engine", "corvo_composer"}:
+            raise HTTPException(status_code=503, detail="Lote generativo local não é suportado dentro da Vercel Function. Use Composer/Mock ou execute o Engine localmente.")
+        run_batch(job_id)
+    else:
+        thread = threading.Thread(target=run_batch, args=(job_id,), daemon=True)
+        thread.start()
     return status.model_dump()
 
 

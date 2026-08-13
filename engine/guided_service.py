@@ -162,7 +162,7 @@ class GuidedExecutionService:
             for ref in references:
                 item = memory_manager.by_id.get(ref.get('id'))
                 if item:
-                    path = Path(__file__).resolve().parent.parent / item['local_path']
+                    path = memory_manager.path_for(item)
                 else:
                     # Demo bank asset: locate through Composer's visual bank.
                     asset = next((a for a in composer_engine.bank.assets if a.get('id') == ref.get('id')), None)

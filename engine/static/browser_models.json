@@ -1,0 +1,29 @@
+{
+  "schema": "corvo.browser_models.v1",
+  "version": "0.10.0",
+  "default": "swin2sr_light_x2",
+  "models": [
+    {
+      "id": "swin2sr_light_x2",
+      "provider": "transformers_js",
+      "task": "image-to-image",
+      "model": "Xenova/swin2SR-lightweight-x2-64",
+      "devices": ["webgpu", "wasm"],
+      "cache": "browser_cache_api",
+      "capabilities": {
+        "detail_reconstruction": true,
+        "super_resolution": true,
+        "prompt_guidance": false,
+        "identity_reference": false,
+        "pose_control": false,
+        "regional_inpainting": false
+      },
+      "role": "MVP que prova inferência de IA no navegador sem instalação local"
+    }
+  ],
+  "future_provider_contract": {
+    "input": ["base_image", "prompt", "mask", "identity_reference", "pose_reference", "scene_references"],
+    "output": ["final_image", "timings", "device", "model", "conditioning_log"],
+    "target": "guided_generative_browser_refiner"
+  }
+}

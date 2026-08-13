@@ -1,3 +1,5 @@
+import { browserRuntime, DEFAULT_MODEL, TRANSFORMERS_VERSION } from './browser_runtime.js';
+
 const $ = (id) => document.getElementById(id);
 
 const healthBadge = $('healthBadge');
@@ -87,11 +89,40 @@ const benchmarkMeta = $('benchmarkMeta');
 const benchmarkVerdict = $('benchmarkVerdict');
 const benchmarkBody = $('benchmarkBody');
 
+const browserRuntimeBadge = $('browserRuntimeBadge');
+const browserWebgpu = $('browserWebgpu');
+const browserProfile = $('browserProfile');
+const browserCache = $('browserCache');
+const browserModelStatus = $('browserModelStatus');
+const browserDeviceInfo = $('browserDeviceInfo');
+const browserDeviceMode = $('browserDeviceMode');
+const browserModel = $('browserModel');
+const browserInputLimit = $('browserInputLimit');
+const browserDetectBtn = $('browserDetectBtn');
+const browserBenchmarkBtn = $('browserBenchmarkBtn');
+const browserPrepareBtn = $('browserPrepareBtn');
+const browserClearCacheBtn = $('browserClearCacheBtn');
+const browserProgressBar = $('browserProgressBar');
+const browserProgressText = $('browserProgressText');
+const browserImageFile = $('browserImageFile');
+const browserUseComposerBtn = $('browserUseComposerBtn');
+const browserUseGuidedBtn = $('browserUseGuidedBtn');
+const browserRefineBtn = $('browserRefineBtn');
+const browserDownloadLink = $('browserDownloadLink');
+const browserRefineMeta = $('browserRefineMeta');
+const browserBeforePreview = $('browserBeforePreview');
+const browserAfterPreview = $('browserAfterPreview');
+
+
 let currentJobId = null;
 let pollTimer = null;
 let currentBenchmarkId = null;
 let benchmarkPollTimer = null;
 let currentOperationId = null;
+let browserSelectedSource = null;
+let browserSelectedLabel = null;
+let browserBatchCancelled = false;
+let browserBatchObjectUrls = [];
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -175,11 +206,20 @@ function renderPlan(composition) {
 async function refreshHealth() {
   try {
     const [health, system] = await Promise.all([api('/api/health'), api('/api/system')]);
-    healthBadge.textContent = `Online · V${health.version} · ${health.jobs} lote(s)`;
+    const runtimeLabel = health.runtime_mode === 'vercel' ? 'VERCEL · TEMPORÁRIO' : 'LOCAL';
+    healthBadge.textContent = `Online · V${health.version} · ${runtimeLabel} · ${health.jobs} lote(s)`;
     const gpu = system.gpu_names?.length ? `GPU: ${system.gpu_names.join(', ')}` : 'GPU: não identificada';
     const memory = system.memory?.total_items ?? 0;
     const anatomy = system.anatomy?.ready ? 'POSE PRONTA' : 'POSE FALLBACK';
-    systemBadge.textContent = `${gpu} · CUDA: ${system.cuda_available ? 'SIM' : 'NÃO'} · memória visual: ${memory} item(ns) · anatomia: ${anatomy} · providers: ${(system.providers || []).join(', ')}`;
+    if (health.runtime_mode === 'vercel') {
+      systemBadge.textContent = `MODO VERCEL · REFINADOR BROWSER-FIRST NO CLIENTE · Composer API leve · dados do servidor temporários · SD.CPP apenas legado · ${memory} item(ns) na memória desta instância`;
+      document.querySelectorAll('option[value="sdcpp_local"], option[value="diffusers_cpu"]').forEach(opt => {
+        opt.disabled = true;
+        opt.textContent = `${opt.textContent} · SOMENTE LOCAL`;
+      });
+    } else {
+      systemBadge.textContent = `BROWSER-FIRST · ${gpu} · memória visual: ${memory} item(ns) · anatomia servidor: ${anatomy} · providers: ${(system.providers || []).join(', ')}`;
+    }
   } catch (err) {
     healthBadge.textContent = 'Motor offline';
     systemBadge.textContent = err.message;
@@ -207,7 +247,7 @@ function toggleBackendFields() {
   const batchUrlWrap = batchEngineUrl.closest('.a1111-only');
   if (singleUrlWrap) singleUrlWrap.style.display = singleIsA1111 ? '' : 'none';
   if (batchUrlWrap) batchUrlWrap.style.display = batchIsA1111 ? '' : 'none';
-  generateOneBtn.textContent = singleBackend.value === 'composer' ? 'Compor imagem' : 'Gerar imagem';
+  generateOneBtn.textContent = singleBackend.value === 'composer_browser' ? 'Compor + refinar no navegador' : (singleBackend.value === 'composer' ? 'Compor imagem' : 'Gerar imagem');
 }
 
 function renderQueue(items, jobId) {
@@ -579,11 +619,13 @@ async function runGuided() {
   guidedExportLink.classList.add('disabled'); guidedExportLink.href = '#';
   guidedMeta.textContent = 'Executando guia → composição → refinador opcional → logs...';
   try {
+    const browserRefineRequested = guidedRefiner.value === 'browser_swin2sr';
     const data = await api('/api/generate/guided', {
       method: 'POST', body: JSON.stringify({
         prompt: guidedPrompt.value.trim(), guide_text,
         width: Number(guidedWidth.value), height: Number(guidedHeight.value),
-        refiner: guidedRefiner.value, steps: Number(guidedSteps.value), strength: Number(guidedStrength.value),
+        refiner: browserRefineRequested ? 'none' : guidedRefiner.value,
+        steps: Number(guidedSteps.value), strength: Number(guidedStrength.value),
         collect_missing: guidedCollectMissing.value === 'true', auto_approve_collected: false,
       }),
     });
@@ -592,7 +634,16 @@ async function runGuided() {
     guidedOperationBadge.textContent = data.operation_id;
     guidedExportLink.href = data.export_url; guidedExportLink.classList.remove('disabled');
     guidedPlan.innerHTML = guidedPlanHtml(data); guidedPlan.classList.remove('empty');
-    guidedMeta.textContent = `Execução concluída · ${formatMs(data.timings?.total_ms)} · avaliação manual pendente.`;
+    if (browserRefineRequested) {
+      guidedMeta.textContent = `Composição concluída em ${formatMs(data.timings?.total_ms)} · iniciando refinador no navegador...`;
+      const baseDataUrl = `data:image/png;base64,${data.image_base64}`;
+      const webResult = await refineSelectedInBrowser({ source: baseDataUrl, label: `operação ${data.operation_id}`, updateGuided: true });
+      guidedMeta.textContent = webResult
+        ? `Execução concluída · COMPOSER + BROWSER ${webResult.device.toUpperCase()} · servidor não executou a IA. ZIP do servidor mantém a composição-base; PNG web pode ser baixado no painel Browser.`
+        : `Composição concluída · refinador web não executado.`;
+    } else {
+      guidedMeta.textContent = `Execução concluída · ${formatMs(data.timings?.total_ms)} · avaliação manual pendente.`;
+    }
     await refreshMemoryGallery();
   } catch (err) { guidedMeta.textContent = `Erro na execução guiada: ${err.message}`; }
   finally { guidedRunBtn.disabled = false; }
@@ -614,6 +665,328 @@ async function refreshMemoryGallery() {
     memoryGallery.innerHTML = `<div class="memory-empty error-text">Erro ao ler memória: ${escapeHtml(err.message)}</div>`;
   }
 }
+
+
+function formatBytes(value) {
+  const n = Number(value || 0);
+  if (!n) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.min(units.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
+  return `${(n / (1024 ** i)).toFixed(i ? 1 : 0)} ${units[i]}`;
+}
+
+function setBrowserProgress(percent = 0, text = '') {
+  if (browserProgressBar) browserProgressBar.style.width = `${Math.max(0, Math.min(100, Number(percent || 0)))}%`;
+  if (text && browserProgressText) browserProgressText.textContent = text;
+}
+
+async function refreshBrowserCacheStatus() {
+  try {
+    const data = await browserRuntime.cacheStatus();
+    if (!data.available) {
+      browserCache.textContent = 'INDISPONÍVEL';
+      return data;
+    }
+    browserCache.textContent = data.matching_entries
+      ? `${data.matching_entries} ARQ.${data.estimated_bytes ? ` · ${formatBytes(data.estimated_bytes)}` : ''}`
+      : 'VAZIO / NÃO MEDIDO';
+    return data;
+  } catch (err) {
+    browserCache.textContent = 'ERRO';
+    return null;
+  }
+}
+
+async function refreshBrowserRuntime() {
+  browserRuntimeBadge.textContent = 'Detectando WebGPU...';
+  browserDetectBtn.disabled = true;
+  try {
+    const data = await browserRuntime.detect();
+    if (data.webgpu_ready) {
+      browserWebgpu.textContent = 'DISPONÍVEL';
+      browserWebgpu.className = 'ok';
+      browserRuntimeBadge.textContent = 'BROWSER ENGINE · WEBGPU';
+      browserRuntimeBadge.className = 'badge';
+    } else {
+      browserWebgpu.textContent = 'FALLBACK WASM';
+      browserWebgpu.className = 'warn';
+      browserRuntimeBadge.textContent = 'BROWSER ENGINE · WASM';
+    }
+    browserProfile.textContent = String(data.profile || 'compatibility').toUpperCase();
+    const info = data.adapter_info || {};
+    const gpuName = info.description || info.device || info.architecture || info.vendor || 'GPU não identificada pelo navegador';
+    browserDeviceInfo.innerHTML = [
+      `<strong>${escapeHtml(gpuName)}</strong>`,
+      `Perfil: ${escapeHtml(data.profile)} · RAM reportada: ${data.device_memory_gb ? `${data.device_memory_gb} GB` : 'n/d'} · CPU threads: ${data.hardware_concurrency || 'n/d'}`,
+      data.webgpu_ready ? 'Execução recomendada: WEBGPU. Nenhuma instalação local necessária.' : `Execução recomendada: WASM/CPU. ${escapeHtml(data.reason || '')}`,
+    ].join('<br>');
+    await refreshBrowserCacheStatus();
+    return data;
+  } catch (err) {
+    browserWebgpu.textContent = 'ERRO';
+    browserWebgpu.className = 'bad';
+    browserRuntimeBadge.textContent = 'Falha no diagnóstico';
+    browserDeviceInfo.textContent = `Erro: ${err.message}`;
+    return null;
+  } finally {
+    browserDetectBtn.disabled = false;
+  }
+}
+
+async function prepareBrowserRefiner() {
+  browserPrepareBtn.disabled = true;
+  browserModelStatus.textContent = 'CARREGANDO...';
+  browserModelStatus.className = 'warn';
+  setBrowserProgress(3, 'Preparando runtime e modelo no navegador...');
+  try {
+    const data = await browserRuntime.prepareRefiner({
+      device: browserDeviceMode.value,
+      model: browserModel.value || DEFAULT_MODEL,
+    });
+    browserModelStatus.textContent = `PRONTO · ${data.device.toUpperCase()}`;
+    browserModelStatus.className = 'ok';
+    setBrowserProgress(100, `Refinador pronto · ${data.model} · ${data.device.toUpperCase()} · cache do navegador habilitado.`);
+    await refreshBrowserCacheStatus();
+    return data;
+  } catch (err) {
+    browserModelStatus.textContent = 'FALHOU';
+    browserModelStatus.className = 'bad';
+    setBrowserProgress(0, `Erro ao preparar refinador: ${err.message}`);
+    throw err;
+  } finally {
+    browserPrepareBtn.disabled = false;
+  }
+}
+
+async function runBrowserBenchmark() {
+  browserBenchmarkBtn.disabled = true;
+  browserProgressText.textContent = 'Executando compute shader WebGPU no próprio navegador...';
+  try {
+    const data = await browserRuntime.benchmarkWebGPU();
+    browserProgressText.textContent = `WebGPU OK · ${data.duration_ms} ms · ${data.passes} passes · ~${data.effective_million_elements_per_second} M elementos/s (indicador interno, não comparação entre modelos).`;
+  } catch (err) {
+    browserProgressText.textContent = `Benchmark WebGPU indisponível: ${err.message}. O modo WASM continua possível.`;
+  } finally {
+    browserBenchmarkBtn.disabled = false;
+  }
+}
+
+function setBrowserSource(source, label, previewUrl = null) {
+  browserSelectedSource = source;
+  browserSelectedLabel = label;
+  browserBeforePreview.src = previewUrl || (typeof source === 'string' ? source : '');
+  browserAfterPreview.removeAttribute('src');
+  browserDownloadLink.classList.add('disabled');
+  browserDownloadLink.href = '#';
+  browserRefineMeta.textContent = `Fonte selecionada: ${label}`;
+}
+
+async function refineSelectedInBrowser({ source = null, label = null, updateGuided = false } = {}) {
+  const actualSource = source || browserSelectedSource;
+  if (!actualSource) {
+    browserRefineMeta.textContent = 'Selecione uma imagem, ou use um preview existente.';
+    return null;
+  }
+  browserRefineBtn.disabled = true;
+  browserRefineMeta.textContent = 'Refinando localmente no navegador...';
+  if (source) setBrowserSource(source, label || 'resultado guiado', typeof source === 'string' ? source : null);
+  try {
+    const limit = Number(browserInputLimit.value || 0) || null;
+    const result = await browserRuntime.refine(actualSource, {
+      device: browserDeviceMode.value,
+      model: browserModel.value || DEFAULT_MODEL,
+      maxInputDimension: limit,
+      preserveOutputSize: true,
+    });
+    browserAfterPreview.src = result.dataUrl;
+    browserDownloadLink.href = result.dataUrl;
+    browserDownloadLink.download = `corvo_refinado_${result.id}.png`;
+    browserDownloadLink.classList.remove('disabled');
+    browserRefineMeta.textContent = `CONCLUÍDO NO CLIENTE · ${result.device.toUpperCase()} · ${formatMs(result.duration_ms)} · entrada IA ${result.model_input_width}×${result.model_input_height} · saída ${result.output_width}×${result.output_height}.`;
+    browserModelStatus.textContent = `PRONTO · ${result.device.toUpperCase()}`;
+    browserModelStatus.className = 'ok';
+    if (updateGuided && guidedPreview) guidedPreview.src = result.dataUrl;
+    return result;
+  } catch (err) {
+    browserRefineMeta.textContent = `Erro no refinador web: ${err.message}`;
+    throw err;
+  } finally {
+    browserRefineBtn.disabled = false;
+  }
+}
+
+browserRuntime.addEventListener('model-progress', (event) => {
+  const d = event.detail || {};
+  if (d.progress != null) setBrowserProgress(d.progress, d.message || d.status || 'Carregando modelo...');
+  else if (d.message) browserProgressText.textContent = d.message;
+});
+browserRuntime.addEventListener('runtime-progress', (event) => {
+  const d = event.detail || {};
+  if (d.message) browserProgressText.textContent = d.message;
+});
+browserRuntime.addEventListener('inference-progress', (event) => {
+  const d = event.detail || {};
+  if (d.message) browserRefineMeta.textContent = d.message;
+});
+
+browserDetectBtn.addEventListener('click', refreshBrowserRuntime);
+browserBenchmarkBtn.addEventListener('click', runBrowserBenchmark);
+browserPrepareBtn.addEventListener('click', () => prepareBrowserRefiner().catch(() => {}));
+browserClearCacheBtn.addEventListener('click', async () => {
+  browserClearCacheBtn.disabled = true;
+  try {
+    const data = await browserRuntime.clearModelCache();
+    browserModelStatus.textContent = 'NÃO CARREGADO';
+    browserModelStatus.className = '';
+    setBrowserProgress(0, `Cache limpo: ${data.deleted.length} cache(s) removido(s).`);
+    await refreshBrowserCacheStatus();
+  } catch (err) {
+    browserProgressText.textContent = `Erro ao limpar cache: ${err.message}`;
+  } finally { browserClearCacheBtn.disabled = false; }
+});
+browserImageFile.addEventListener('change', () => {
+  const file = browserImageFile.files?.[0];
+  if (!file) return;
+  setBrowserSource(file, `${file.name} · ${formatBytes(file.size)}`, URL.createObjectURL(file));
+});
+browserUseComposerBtn.addEventListener('click', () => {
+  if (!singlePreview.src || !singlePreview.src.startsWith('data:image')) {
+    browserRefineMeta.textContent = 'Primeiro gere uma imagem no Composer.';
+    return;
+  }
+  setBrowserSource(singlePreview.src, 'último preview da geração');
+});
+browserUseGuidedBtn.addEventListener('click', () => {
+  if (!guidedPreview.src || !guidedPreview.src.startsWith('data:image')) {
+    browserRefineMeta.textContent = 'Primeiro execute uma geração guiada.';
+    return;
+  }
+  setBrowserSource(guidedPreview.src, 'último preview guiado');
+});
+browserRefineBtn.addEventListener('click', () => refineSelectedInBrowser().catch(() => {}));
+
+
+function parseBrowserBatch(text) {
+  return String(text || '').split(/\r?\n/).map(x => x.trim()).filter(Boolean).map((line, index) => {
+    const pipe = line.indexOf('|');
+    if (pipe > 0) return { id: line.slice(0, pipe).trim(), prompt: line.slice(pipe + 1).trim() };
+    return { id: String(index + 1).padStart(3, '0'), prompt: line };
+  }).filter(x => x.prompt);
+}
+
+function renderBrowserBatchRows(items) {
+  queueBody.innerHTML = '';
+  for (const item of items) {
+    const tr = document.createElement('tr');
+    const link = item.object_url ? `<a href="${item.object_url}" target="_blank" download="${escapeHtml(item.id)}.png">${escapeHtml(item.id)}.png</a>` : escapeHtml(item.error || '-');
+    tr.innerHTML = `
+      <td>${escapeHtml(item.id)}</td>
+      <td class="status-${escapeHtml(item.status)}">${escapeHtml(item.status)}</td>
+      <td>${formatMs(item.duration_ms)}</td>
+      <td class="plan-cell">${escapeHtml(item.stage || 'browser')}</td>
+      <td class="error-cell">${link}</td>
+    `;
+    queueBody.appendChild(tr);
+  }
+}
+
+async function runBrowserBatch(text) {
+  const entries = parseBrowserBatch(text);
+  if (!entries.length) throw new Error('Nenhum prompt encontrado.');
+  browserBatchCancelled = false;
+  browserBatchObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+  browserBatchObjectUrls = [];
+  const items = entries.map((x) => ({ ...x, status: 'pending', duration_ms: null, stage: 'aguardando', data_url: null, object_url: null, error: null }));
+  renderBrowserBatchRows(items);
+  updateDownloadLink('', false);
+  batchSummary.textContent = `LOTE BROWSER · preparando refinador uma única vez para ${items.length} imagem(ns)...`;
+  const prepared = await prepareBrowserRefiner();
+  const manifest = {
+    version: '0.10.0',
+    execution: 'browser_client',
+    generated_at: new Date().toISOString(),
+    model: browserModel.value || DEFAULT_MODEL,
+    device: prepared.device,
+    items: [],
+  };
+
+  for (let i = 0; i < items.length; i += 1) {
+    const item = items[i];
+    if (browserBatchCancelled) {
+      item.status = 'cancelled'; item.stage = 'cancelado';
+      continue;
+    }
+    item.status = 'running'; item.stage = 'compondo no servidor leve'; renderBrowserBatchRows(items);
+    const started = performance.now();
+    try {
+      const composed = await api('/api/generate', {
+        method: 'POST',
+        body: JSON.stringify({
+          prompt: item.prompt, backend: 'composer', engine_url: null,
+          width: Number(batchWidth.value), height: Number(batchHeight.value), steps: 1,
+        }),
+      });
+      item.stage = 'refinando no navegador'; renderBrowserBatchRows(items);
+      const base = `data:image/png;base64,${composed.image_base64}`;
+      const limit = Number(browserInputLimit.value || 0) || null;
+      const refined = await browserRuntime.refine(base, {
+        device: browserDeviceMode.value,
+        model: browserModel.value || DEFAULT_MODEL,
+        maxInputDimension: limit,
+        preserveOutputSize: true,
+      });
+      item.duration_ms = Math.round(performance.now() - started);
+      item.data_url = refined.dataUrl;
+      item.status = 'done';
+      item.stage = `COMPOSER → BROWSER ${refined.device.toUpperCase()}`;
+      const blob = refined.blob;
+      item.object_url = URL.createObjectURL(blob);
+      browserBatchObjectUrls.push(item.object_url);
+      manifest.items.push({
+        id: item.id, prompt: item.prompt, status: 'done', duration_ms: item.duration_ms,
+        browser_run_id: refined.id, browser_device: refined.device,
+        model_input: [refined.model_input_width, refined.model_input_height],
+        output: [refined.output_width, refined.output_height],
+        composition: composed.composition || null,
+      });
+    } catch (err) {
+      item.status = 'error'; item.error = err.message; item.stage = 'erro'; item.duration_ms = Math.round(performance.now() - started);
+      manifest.items.push({ id: item.id, prompt: item.prompt, status: 'error', error: err.message, duration_ms: item.duration_ms });
+    }
+    renderBrowserBatchRows(items);
+    const done = items.filter(x => x.status === 'done').length;
+    const failed = items.filter(x => x.status === 'error').length;
+    batchSummary.textContent = `LOTE BROWSER · ${done}/${items.length} concluídas · ${failed} falhas · IA executada no cliente.`;
+  }
+
+  renderBrowserBatchRows(items);
+  if (browserBatchCancelled) {
+    batchSummary.textContent = 'Lote browser cancelado. Resultados já concluídos continuam disponíveis.';
+    return;
+  }
+
+  const success = items.filter(x => x.status === 'done');
+  if (!success.length) throw new Error('Nenhuma imagem foi concluída para exportação.');
+  batchSummary.textContent = `Gerando ZIP no próprio navegador · ${success.length} PNG(s)...`;
+  const mod = await import('https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm');
+  const JSZip = mod.default || mod;
+  const zip = new JSZip();
+  for (const item of success) {
+    const base64 = String(item.data_url).split(',', 2)[1];
+    zip.file(`${item.id}.png`, base64, { base64: true });
+  }
+  zip.file('manifest_browser.json', JSON.stringify(manifest, null, 2));
+  const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } }, (meta) => {
+    batchSummary.textContent = `Compactando no navegador · ${Math.round(meta.percent)}%`;
+  });
+  const zipUrl = URL.createObjectURL(zipBlob);
+  browserBatchObjectUrls.push(zipUrl);
+  downloadZipLink.href = zipUrl;
+  downloadZipLink.download = `corvo_browser_lote_${Date.now()}.zip`;
+  downloadZipLink.classList.remove('disabled');
+  batchSummary.textContent = `LOTE CONCLUÍDO NO NAVEGADOR · ${success.length}/${items.length} PNG(s) · ZIP local pronto.`;
+}
+
 
 refreshComposerBtn.addEventListener('click', () => refreshComposerStatus(true));
 rebuildComposerBtn.addEventListener('click', async () => {
@@ -658,21 +1031,33 @@ generateOneBtn.addEventListener('click', async () => {
     ? 'Interpretando prompt → buscando memória visual → compondo...'
     : 'Gerando...';
   try {
+    const browserRefineRequested = singleBackend.value === 'composer_browser';
     const data = await api('/api/generate', {
       method: 'POST',
       body: JSON.stringify({
         prompt,
-        backend: singleBackend.value,
+        backend: browserRefineRequested ? 'composer' : singleBackend.value,
         engine_url: singleEngineUrl.value.trim() || null,
         width: Number(singleWidth.value),
         height: Number(singleHeight.value),
         steps: Number(singleSteps.value),
       }),
     });
-    singlePreview.src = `data:image/png;base64,${data.image_base64}`;
-    singleMeta.textContent = `SUCESSO · ${data.backend.toUpperCase()} · ${formatMs(data.duration_ms)}`;
-    singleMeta.className = 'meta success-text';
+    const baseDataUrl = `data:image/png;base64,${data.image_base64}`;
+    singlePreview.src = baseDataUrl;
     renderPlan(data.composition);
+    if (data.image_base64) setBrowserSource(baseDataUrl, 'última geração do Composer');
+    if (browserRefineRequested) {
+      singleMeta.textContent = `COMPOSIÇÃO PRONTA · ${formatMs(data.duration_ms)} · refinando no navegador...`;
+      const refined = await refineSelectedInBrowser({ source: baseDataUrl, label: 'geração única', updateGuided: false });
+      if (refined) {
+        singlePreview.src = refined.dataUrl;
+        singleMeta.textContent = `SUCESSO · COMPOSER + BROWSER ${refined.device.toUpperCase()} · composição ${formatMs(data.duration_ms)} + refino ${formatMs(refined.duration_ms)}`;
+      }
+    } else {
+      singleMeta.textContent = `SUCESSO · ${data.backend.toUpperCase()} · ${formatMs(data.duration_ms)}`;
+    }
+    singleMeta.className = 'meta success-text';
     await refreshComposerStatus(false);
   } catch (err) {
     singleMeta.textContent = `Erro: ${err.message}`;
@@ -722,6 +1107,14 @@ startBatchBtn.addEventListener('click', async () => {
   batchSummary.textContent = 'Iniciando lote...';
   queueBody.innerHTML = '';
   updateDownloadLink('', false);
+  if (batchBackend.value === 'composer_browser') {
+    try {
+      await runBrowserBatch(text);
+    } catch (err) {
+      batchSummary.textContent = `Erro no lote browser: ${err.message}`;
+    }
+    return;
+  }
   try {
     const data = await api('/api/batch', {
       method: 'POST',
@@ -747,6 +1140,11 @@ startBatchBtn.addEventListener('click', async () => {
 });
 
 cancelBatchBtn.addEventListener('click', async () => {
+  if (batchBackend.value === 'composer_browser') {
+    browserBatchCancelled = true;
+    batchSummary.textContent = 'Cancelamento do lote browser solicitado...';
+    return;
+  }
   if (!currentJobId) return;
   try {
     await api(`/api/batch/${currentJobId}/cancel`, { method: 'POST' });
@@ -815,5 +1213,5 @@ guidedRejectBtn.addEventListener('click', () => guidedEvaluate(false));
 guidedSaveEvalBtn.addEventListener('click', () => guidedEvaluate(null));
 guidedReprocessBtn.addEventListener('click', reprocessGuidedRegion);
 
-Promise.all([refreshHealth(), refreshComposerStatus(false), refreshMemoryGallery(), refreshRefinerStatus()]).then(toggleBackendFields);
+Promise.all([refreshHealth(), refreshComposerStatus(false), refreshMemoryGallery(), refreshRefinerStatus(), refreshBrowserRuntime()]).then(toggleBackendFields);
 setInterval(refreshHealth, 10000);

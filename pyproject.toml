@@ -1,12 +1,13 @@
 [project]
-name = "image-motor-mvp"
-version = "0.2.1"
+name = "corvo-image-engine"
+version = "0.10.0"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.111.0",
   "uvicorn>=0.30.0",
   "pillow>=10.4.0",
   "requests>=2.32.0",
+  "psutil>=6.0.0"
 ]
 
 [tool.vercel]

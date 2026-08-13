@@ -342,3 +342,50 @@ button.ghost, .ghost {
 
 .reprocess-box { margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.10); }
 .reprocess-box textarea { margin-top: 8px; }
+
+/* V0.10 · browser-first */
+.browser-panel {
+  margin: 20px 0;
+  border-color: #347a67;
+  background: linear-gradient(180deg, rgba(18, 38, 48, 0.97), rgba(18, 26, 47, 0.96));
+}
+.browser-status-grid { grid-template-columns: repeat(4, minmax(120px, 1fr)); }
+.browser-runtime-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 16px;
+  margin-top: 16px;
+}
+.browser-config { grid-template-columns: 0.75fr 1.55fr 0.75fr; }
+.browser-preview-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 16px;
+}
+.browser-preview { min-height: 260px; }
+.browser-preview img:empty { display: none; }
+.browser-progress {
+  height: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(0,0,0,0.25);
+  margin-top: 14px;
+}
+.browser-progress > div {
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--good));
+  transition: width .2s ease;
+}
+#browserDeviceInfo { line-height: 1.55; }
+#browserModelStatus.ok, #browserWebgpu.ok { color: var(--good); }
+#browserModelStatus.warn, #browserWebgpu.warn { color: var(--warn); }
+#browserModelStatus.bad, #browserWebgpu.bad { color: var(--bad); }
+@media (max-width: 980px) {
+  .browser-runtime-grid, .browser-preview-grid { grid-template-columns: 1fr; }
+  .browser-status-grid { grid-template-columns: repeat(2, 1fr); }
+  .browser-config { grid-template-columns: 1fr; }
+}

@@ -54,7 +54,7 @@ class ReferenceConditioningBuilder:
     def _path_for(self, ref: dict[str, Any]) -> Optional[Path]:
         item = memory_manager.by_id.get(ref.get("id"))
         if item:
-            path = ROOT / item.get("local_path", "")
+            path = memory_manager.path_for(item)
             return path if path.exists() else None
         asset = next((a for a in composer_engine.bank.assets if a.get("id") == ref.get("id")), None)
         if asset:

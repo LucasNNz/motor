@@ -130,6 +130,9 @@ class VisualBank:
         return self.reload()
 
     def asset_path(self, asset: dict[str, Any]) -> Path:
+        mem_item = memory_manager.by_id.get(asset.get("id"))
+        if mem_item:
+            return memory_manager.path_for(mem_item)
         rel = asset.get("file") or asset.get("local_path")
         if not rel:
             raise FileNotFoundError(f"Asset sem caminho: {asset.get('id')}")

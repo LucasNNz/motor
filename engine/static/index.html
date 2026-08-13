@@ -10,8 +10,8 @@
   <div class="app-shell">
     <header class="topbar">
       <div>
-        <h1>Corvo Image Engine <span class="version">V0.9 · REFERÊNCIAS + ANATOMIA</span></h1>
-        <p>Guia técnico + biblioteca auditável + condicionamento visual + anatomia opcional + operações reconstruíveis.</p>
+        <h1>Corvo Image Engine <span class="version">V0.10 · BROWSER-FIRST + WEBGPU</span></h1>
+        <p>Browser-first: Composer + biblioteca auditável + refinador de IA no próprio navegador, sem instalação local obrigatória.</p>
       </div>
       <div class="top-status">
         <div id="healthBadge" class="badge">Conectando...</div>
@@ -34,11 +34,92 @@
         <div class="status-card"><span>Motor</span><strong class="ok">COMPOSER</strong></div>
         <div class="status-card"><span>Assets totais</span><strong id="bankAssets">Verificando...</strong></div>
         <div class="status-card"><span>Banco</span><strong id="bankBreakdown">-</strong></div>
-        <div class="status-card"><span>Refinador</span><strong class="warn">DESLIGADO</strong></div>
+        <div class="status-card"><span>Refinador</span><strong id="composerRefinerMode" class="ok">BROWSER-FIRST</strong></div>
       </div>
       <div id="composerMessage" class="meta"></div>
       <div class="setup-note">
-        <strong>Direção atual:</strong> o caminho novo é GUIA → BUSCA DIRIGIDA → BIBLIOTECA AUDITÁVEL → COMPOSIÇÃO → REFINADOR CONDICIONADO OPCIONAL → LOGS/ZIP. O modo por prompt continua disponível para compatibilidade.
+        <strong>Direção atual:</strong> VERCEL ENTREGA O APP → O NAVEGADOR DETECTA WEBGPU → MODELO É BAIXADO/CACHEADO NO BROWSER → COMPOSIÇÃO → REFINO LOCAL NO CLIENTE → PNG. O motor Python/SD.CPP fica somente como legado opcional.
+      </div>
+    </section>
+
+    <section class="panel browser-panel">
+      <div class="engine-head">
+        <div>
+          <h2>Refinador no Navegador · V0.10</h2>
+          <p class="muted">A IA roda no computador que abriu a página. Não exige instalar Python, CUDA, SD.CPP ou servidor local.</p>
+        </div>
+        <div id="browserRuntimeBadge" class="badge">Detectando navegador...</div>
+      </div>
+      <div class="engine-status-grid browser-status-grid">
+        <div class="status-card"><span>WebGPU</span><strong id="browserWebgpu">VERIFICANDO...</strong></div>
+        <div class="status-card"><span>Perfil estimado</span><strong id="browserProfile">-</strong></div>
+        <div class="status-card"><span>Cache de modelos</span><strong id="browserCache">-</strong></div>
+        <div class="status-card"><span>Modelo MVP</span><strong id="browserModelStatus">NÃO CARREGADO</strong></div>
+      </div>
+      <div class="browser-runtime-grid">
+        <div class="collector-box">
+          <strong>Diagnóstico e preparação</strong>
+          <div id="browserDeviceInfo" class="meta">O diagnóstico será executado automaticamente.</div>
+          <div class="inline-fields browser-config">
+            <div>
+              <label>Execução</label>
+              <select id="browserDeviceMode">
+                <option value="auto" selected>AUTO · WEBGPU → WASM</option>
+                <option value="webgpu">WEBGPU</option>
+                <option value="wasm">WASM / CPU</option>
+              </select>
+            </div>
+            <div>
+              <label>Modelo</label>
+              <select id="browserModel">
+                <option value="Xenova/swin2SR-lightweight-x2-64" selected>SWIN2SR LIGHTWEIGHT ×2 · MVP</option>
+              </select>
+            </div>
+            <div>
+              <label>Entrada máxima</label>
+              <select id="browserInputLimit">
+                <option value="0" selected>AUTO</option>
+                <option value="256">256 PX · LEVE</option>
+                <option value="384">384 PX · MÉDIO</option>
+                <option value="512">512 PX · FORTE</option>
+              </select>
+            </div>
+          </div>
+          <div class="actions wrap">
+            <button id="browserDetectBtn" class="ghost">Detectar novamente</button>
+            <button id="browserBenchmarkBtn" class="ghost">Testar WebGPU</button>
+            <button id="browserPrepareBtn">Preparar refinador</button>
+            <button id="browserClearCacheBtn" class="ghost">Limpar cache IA</button>
+          </div>
+          <div class="browser-progress"><div id="browserProgressBar"></div></div>
+          <div id="browserProgressText" class="meta">Na primeira utilização o navegador baixa o modelo; depois ele pode reaproveitar o cache local.</div>
+        </div>
+        <div class="collector-box">
+          <strong>Teste de refinamento local</strong>
+          <p class="muted">Use uma imagem do computador ou reutilize o último resultado do Composer/Guia. O PNG refinado não passa pelo servidor.</p>
+          <label>Imagem de entrada</label>
+          <input id="browserImageFile" type="file" accept="image/png,image/jpeg,image/webp" />
+          <div class="actions wrap">
+            <button id="browserUseComposerBtn" class="ghost">Usar preview da geração</button>
+            <button id="browserUseGuidedBtn" class="ghost">Usar preview guiado</button>
+            <button id="browserRefineBtn">Refinar no navegador</button>
+            <a id="browserDownloadLink" class="ghost disabled" href="#" download="corvo_refinado_web.png">Baixar PNG</a>
+          </div>
+          <div id="browserRefineMeta" class="meta">Nenhuma imagem selecionada.</div>
+        </div>
+      </div>
+      <div class="browser-preview-grid">
+        <div>
+          <label>ANTES</label>
+          <div class="preview-box browser-preview"><img id="browserBeforePreview" alt="Antes do refino web" /></div>
+        </div>
+        <div>
+          <label>DEPOIS · PROCESSADO LOCALMENTE</label>
+          <div class="preview-box browser-preview"><img id="browserAfterPreview" alt="Depois do refino web" /></div>
+        </div>
+      </div>
+      <div class="setup-note">
+        <strong>MVP V0.10:</strong> este primeiro modelo web é um image-to-image leve para provar download + cache + inferência no browser. Ele melhora/reconstrói detalhes, mas <strong>ainda não é</strong> o refinador generativo guiado por identidade/pose. O contrato do runtime já fica separado para trocarmos o modelo sem voltar a exigir instalação local.
       </div>
     </section>
 
@@ -51,10 +132,11 @@
           <div>
             <label>Backend</label>
             <select id="singleBackend">
-              <option value="composer" selected>COMPOSER ENGINE</option>
-              <option value="sdcpp_local">SD.CPP · EXPERIMENTAL</option>
-              <option value="diffusers_cpu">DIFFUSERS CPU · EXPERIMENTAL</option>
-              <option value="automatic1111">AUTOMATIC1111</option>
+              <option value="composer_browser" selected>COMPOSER + BROWSER AI · RECOMENDADO</option>
+              <option value="composer">COMPOSER ENGINE · SEM IA</option>
+              <option value="sdcpp_local">SD.CPP · LEGADO LOCAL</option>
+              <option value="diffusers_cpu">DIFFUSERS CPU · LEGADO LOCAL</option>
+              <option value="automatic1111">AUTOMATIC1111 · LEGADO REMOTO</option>
               <option value="mock">MOCK</option>
             </select>
           </div>
@@ -100,10 +182,11 @@
           <div>
             <label>Backend</label>
             <select id="batchBackend">
-              <option value="composer" selected>COMPOSER ENGINE</option>
-              <option value="sdcpp_local">SD.CPP · EXPERIMENTAL</option>
-              <option value="diffusers_cpu">DIFFUSERS CPU · EXPERIMENTAL</option>
-              <option value="automatic1111">AUTOMATIC1111</option>
+              <option value="composer_browser" selected>COMPOSER + BROWSER AI · CLIENTE</option>
+              <option value="composer">COMPOSER ENGINE · SERVIDOR</option>
+              <option value="sdcpp_local">SD.CPP · LEGADO LOCAL</option>
+              <option value="diffusers_cpu">DIFFUSERS CPU · LEGADO LOCAL</option>
+              <option value="automatic1111">AUTOMATIC1111 · LEGADO REMOTO</option>
               <option value="mock">MOCK</option>
             </select>
           </div>
@@ -219,7 +302,7 @@ fix_anatomy=true</textarea>
           <div class="inline-fields collect-config two-row">
             <div><label>Largura</label><input id="guidedWidth" type="number" value="768" min="256" step="64" /></div>
             <div><label>Altura</label><input id="guidedHeight" type="number" value="768" min="256" step="64" /></div>
-            <div><label>Refinador</label><select id="guidedRefiner"><option value="none" selected>SEM REFINADOR</option><option value="light_cpu">LIGHT CPU</option><option value="sdcpp_img2img">SD.CPP IMG2IMG + REFERÊNCIAS</option></select></div>
+            <div><label>Refinador</label><select id="guidedRefiner"><option value="browser_swin2sr" selected>BROWSER AI · WEBGPU/WASM</option><option value="none">SEM REFINADOR</option><option value="light_cpu">LIGHT CPU · LEGADO</option><option value="sdcpp_img2img">SD.CPP IMG2IMG · LEGADO LOCAL</option></select></div>
             <div><label>Steps IA</label><input id="guidedSteps" type="number" value="3" min="1" max="12" /></div>
             <div><label>Força img2img</label><input id="guidedStrength" type="number" value="0.24" min="0.05" max="0.85" step="0.01" /></div>
             <div><label>Buscar faltantes ao executar</label><select id="guidedCollectMissing"><option value="false" selected>NÃO</option><option value="true">SIM</option></select></div>
@@ -275,8 +358,8 @@ feather=0.10</textarea>
     <section class="panel refiner-panel">
       <div class="engine-head">
         <div>
-          <h2>Benchmark do Refinador</h2>
-          <p class="muted">Teste de viabilidade: composição pronta → refinamento → PNG. Mede principalmente o tempo do estágio mais pesado.</p>
+          <h2>Benchmark do Refinador Legado</h2>
+          <p class="muted">Mantido apenas para comparar com o caminho antigo local. O benchmark principal da V0.10 está no painel Browser/WebGPU acima.</p>
         </div>
         <div id="refinerStatusBadge" class="badge">Verificando refinador...</div>
       </div>
@@ -315,7 +398,7 @@ UM CACHORRO FELIZ EM UM PARQUE, COMPOSIÇÃO LIMPA PARA QUIZ, ILUSTRAÇÃO 2D SE
         <button id="cancelBenchmarkBtn" class="ghost">Cancelar benchmark</button>
         <button id="refreshRefinerBtn" class="ghost">Atualizar status</button>
       </div>
-      <div id="benchmarkMeta" class="meta">O teste IA precisa do stable-diffusion.cpp + modelo instalados. Use INSTALAR_VULKAN.bat primeiro; se não funcionar, INSTALAR_CPU.bat.</div>
+      <div id="benchmarkMeta" class="meta">LEGADO: estes testes exigem instalação local. Para a V0.10, use o benchmark WebGPU do painel Browser acima.</div>
       <div id="benchmarkVerdict" class="benchmark-verdict empty">Nenhum benchmark executado.</div>
       <div class="queue-table-wrap benchmark-table-wrap">
         <table class="queue-table">
@@ -405,16 +488,16 @@ UM CACHORRO FELIZ EM UM PARQUE, COMPOSIÇÃO LIMPA PARA QUIZ, ILUSTRAÇÃO 2D SE
     </section>
 
     <section class="panel experimental-panel">
-      <h2>Arquitetura V0.9</h2>
+      <h2>Arquitetura V0.10 · Browser-first</h2>
       <div class="roadmap-grid">
-        <div><strong>GUIA</strong><span>Define buscas, filtros, composição, preservação e refinamento.</span></div>
-        <div><strong>BIBLIOTECA</strong><span>Física, visível, editável e auditável; sem cache oculto como fonte principal.</span></div>
-        <div><strong>OPERAÇÃO</strong><span>Resultado + referências + etapas + tempos + erros + avaliação em ZIP reconstruível.</span></div>
-        <div><strong>REPROCESSAR</strong><span>[FIX] cria uma operação filha e altera somente a região mascarada.</span></div>
+        <div><strong>VERCEL</strong><span>Distribui o aplicativo e os arquivos; não executa o refinador pesado.</span></div>
+        <div><strong>NAVEGADOR</strong><span>Detecta WebGPU, baixa/cacheia o modelo e executa inferência localmente.</span></div>
+        <div><strong>COMPOSER + GUIA</strong><span>Continuam organizando referências, cena e regiões a preservar.</span></div>
+        <div><strong>REFINADOR WEB</strong><span>Contrato independente do backend: hoje Swin2SR MVP; depois refinador generativo guiado.</span></div>
       </div>
     </section>
   </div>
 
-  <script src="/app.js"></script>
+  <script type="module" src="/app.js"></script>
 </body>
 </html>

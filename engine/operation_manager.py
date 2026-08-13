@@ -8,8 +8,9 @@ import zipfile
 from pathlib import Path
 from typing import Any, Optional
 
-ROOT = Path(__file__).resolve().parent.parent
-OPERATIONS_ROOT = ROOT / "operations"
+from .runtime_paths import OPERATIONS_DIR
+
+OPERATIONS_ROOT = OPERATIONS_DIR
 OPERATIONS_ROOT.mkdir(parents=True, exist_ok=True)
 
 

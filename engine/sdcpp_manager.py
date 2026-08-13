@@ -11,6 +11,7 @@ from typing import Optional, Any
 
 import requests
 
+from .runtime_paths import IS_VERCEL
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
 RUNTIME_DIR = PROJECT_DIR / "runtime" / "sdcpp"
@@ -186,6 +187,8 @@ class StableDiffusionCppManager:
         return data
 
     def start(self, wait_seconds: int = 600) -> dict:
+        if IS_VERCEL:
+            raise RuntimeError("stable-diffusion.cpp é um processo local e não pode ser iniciado dentro de uma Vercel Function.")
         with self._lock:
             if self.probe(timeout=0.5):
                 self.state.last_error = None

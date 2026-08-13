@@ -12,11 +12,13 @@ from typing import Any, Optional
 
 from PIL import Image
 
-ROOT = Path(__file__).resolve().parent.parent
-MEMORY_ROOT = ROOT / "CORVO_LIBRARY"
+from .runtime_paths import PROJECT_DIR, DATA_DIR, LIBRARY_DIR, IS_VERCEL, seed_mutable_tree
+
+ROOT = DATA_DIR
+MEMORY_ROOT = LIBRARY_DIR
 ASSETS_ROOT = MEMORY_ROOT
 INDEX_PATH = MEMORY_ROOT / "library_index.json"
-LEGACY_ROOT = ROOT / "visual_memory"
+LEGACY_ROOT = PROJECT_DIR / "visual_memory"
 LEGACY_INDEX = LEGACY_ROOT / "memory_index.json"
 
 CATEGORY_DIRS = {
@@ -68,9 +70,9 @@ def hamming_distance_hex(a: str, b: str) -> int:
 
 class MemoryManager:
     def __init__(self):
-        self.root = MEMORY_ROOT
-        self.assets_root = ASSETS_ROOT
-        self.index_path = INDEX_PATH
+        self.root = seed_mutable_tree("CORVO_LIBRARY")
+        self.assets_root = self.root
+        self.index_path = self.root / "library_index.json"
         self.ensure_dirs()
         self.reload()
         self._migrate_legacy_if_needed()
@@ -146,8 +148,12 @@ class MemoryManager:
             (root / state).mkdir(parents=True, exist_ok=True)
         return root
 
+    def path_for(self, item: dict[str, Any]) -> Path:
+        rel = Path(item.get("local_path") or "")
+        return rel if rel.is_absolute() else ROOT / rel
+
     def _sidecar_path(self, item: dict[str, Any]) -> Path:
-        return (ROOT / item['local_path']).with_suffix('.json')
+        return self.path_for(item).with_suffix('.json')
 
     def _write_sidecar(self, item: dict[str, Any]):
         path = self._sidecar_path(item)
@@ -157,7 +163,7 @@ class MemoryManager:
     def _move_state(self, item: dict[str, Any], new_state: str):
         if new_state not in VALID_STATES:
             raise ValueError(f"Estado inválido: {new_state}")
-        current_path = ROOT / item['local_path']
+        current_path = self.path_for(item)
         concept_root = self._concept_root(item.get('type', 'other'), item.get('concept', 'item'))
         new_path = concept_root / new_state / current_path.name
         if current_path.exists() and current_path.resolve() != new_path.resolve():
@@ -308,7 +314,7 @@ class MemoryManager:
         if blocked is not None: item['blocked'] = bool(blocked)
         if metadata is not None: item['metadata'] = {**item.get('metadata', {}), **metadata}
         if type_name or concept:
-            old_path = ROOT / item['local_path']
+            old_path = self.path_for(item)
             item['type'] = type_name or item.get('type', 'other')
             item['category'] = item['type']
             item['concept'] = concept or item.get('concept', 'item')
@@ -354,7 +360,7 @@ class MemoryManager:
         item = self.by_id.get(item_id)
         if not item:
             raise KeyError(item_id)
-        path = ROOT / item.get('local_path', '')
+        path = self.path_for(item)
         sidecar = path.with_suffix('.json')
         if path.exists(): path.unlink()
         if sidecar.exists(): sidecar.unlink()

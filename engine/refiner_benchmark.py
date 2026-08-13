@@ -10,11 +10,12 @@ from typing import Any, Optional
 
 from PIL import Image
 
+from .runtime_paths import BENCHMARKS_DIR
 from .composer_engine import composer_engine
 from .refiner import SdCppImg2ImgRefiner, build_refiner
 
 ROOT = Path(__file__).resolve().parent.parent
-OUTPUTS = ROOT / 'outputs' / 'refiner_benchmarks'
+OUTPUTS = BENCHMARKS_DIR
 OUTPUTS.mkdir(parents=True, exist_ok=True)
 
 DEFAULT_PROMPTS = [
