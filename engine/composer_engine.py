@@ -354,6 +354,14 @@ class ComposerEngine:
     def _fraction(value, default: float) -> float:
         if value is None:
             return default
+        semantic = {
+            'tiny': 0.24, 'small': 0.38, 'medium': 0.52, 'normal': 0.56,
+            'large': 0.70, 'big': 0.70, 'xlarge': 0.82, 'very_large': 0.82,
+            'center': 0.50, 'left': 0.30, 'right': 0.70, 'top': 0.30, 'bottom': 0.70,
+        }
+        key = normalize_text(str(value)).replace(' ', '_')
+        if key in semantic:
+            return semantic[key]
         try:
             v = float(value)
             if v > 1.0:
@@ -369,8 +377,9 @@ class ComposerEngine:
             obj = Image.open(self.bank.asset_path(plan.object))
             rules = composition_rules or {}
             scale = self._fraction(rules.get('object_scale', rules.get('subject_scale')), 0.62)
-            cx = self._fraction(rules.get('object_x', rules.get('subject_x')), 0.50)
-            cy = self._fraction(rules.get('object_y', rules.get('subject_y')), 0.50)
+            pos = rules.get('subject_position')
+            cx = self._fraction(rules.get('object_x', rules.get('subject_x', pos)), 0.50)
+            cy = self._fraction(rules.get('object_y', rules.get('subject_y', pos)), 0.50)
             size = max(32, int(min(width, height) * scale))
             x = int(width * cx - size / 2)
             y = int(height * cy - size / 2)
@@ -451,25 +460,31 @@ class ComposerEngine:
                 if name.startswith('SEARCH_') and rows:
                     searches[name] = rows[0]
 
-        bg_block = searches.get('SEARCH_BACKGROUND', {})
+        bg_search_block = searches.get('SEARCH_BACKGROUND', {})
+        bg_directive = first('BACKGROUND') or {}
+        bg_block = bg_search_block or bg_directive
         pose_block = searches.get('SEARCH_POSE', {})
         face_block = searches.get('SEARCH_FACE', {}) or searches.get('SEARCH_EXPRESSION', {})
         char_block = searches.get('SEARCH_CHARACTER', {})
         cloth_block = searches.get('SEARCH_CLOTHES', {}) or searches.get('SEARCH_OUTFIT', {})
         obj_block = searches.get('SEARCH_OBJECT', {})
-        light_block = searches.get('SEARCH_LIGHTING', {})
+        light_search_block = searches.get('SEARCH_LIGHTING', {})
+        light_directive = first('LIGHTING') or {}
+        light_block = light_search_block or light_directive
         camera_block = searches.get('SEARCH_CAMERA', {})
 
         bg_terms = self._guide_terms(bg_block.get('query'), bg_block.get('environment'), scene.get('environment'), scene.get('style'))
         pose_terms = self._guide_terms(pose_block.get('query'), pose_block.get('pose'), pose_block.get('orientation'), pose_block.get('camera'), scene.get('action'), scene.get('camera'))
         face_terms = self._guide_terms(face_block.get('query'), scene.get('emotion'))
-        char_terms = self._guide_terms(char_block.get('query'), char_block.get('reference_target'), scene.get('visual_reference'), scene.get('subject'))
+        subject_block = first('SUBJECT') or {}
+        char_terms = self._guide_terms(char_block.get('query'), char_block.get('reference_target'), scene.get('visual_reference'), scene.get('subject'), subject_block.get('name') if str(subject_block.get('type') or '').lower() in {'character','personagem','person'} else None)
         cloth_terms = self._guide_terms(cloth_block.get('query'), cloth_block.get('style'), char_terms)
-        obj_terms = self._guide_terms(obj_block.get('query'), obj_block.get('object'), scene.get('object'))
+        obj_terms = self._guide_terms(obj_block.get('query'), obj_block.get('object'), scene.get('object'), subject_block.get('name') if str(subject_block.get('type') or '').lower() in {'object','objeto'} else None)
 
         has_character = bool(
             char_block or scene.get('visual_reference') or scene.get('character') or pose_terms
             or str(scene.get('subject_type') or '').lower() in {'character', 'personagem', 'person'}
+            or str(subject_block.get('type') or '').lower() in {'character', 'personagem', 'person'}
         )
         background = self._guided_asset('background', bg_terms, default_id='bg_plain_light', allow_candidates=allow_candidates)
         pose = self._guided_asset('pose', pose_terms, default_id='pose_standing_center', allow_candidates=allow_candidates) if has_character else None
@@ -484,7 +499,7 @@ class ComposerEngine:
         )
         extra = {
             'scene': scene, 'composition_rules': comp, 'searches': searches, 'allow_candidates': allow_candidates,
-            'lighting_request': light_block, 'camera_request': camera_block,
+            'lighting_request': light_block, 'background_request': bg_directive, 'style_request': first('STYLE') or {}, 'camera_request': camera_block,
             'selected': {
                 'background': background.get('id') if background else None,
                 'pose': pose.get('id') if pose else None,
@@ -512,6 +527,17 @@ class ComposerEngine:
         elif temp in {'cool', 'cold', 'fria', 'frio'}:
             overlay = Image.new('RGB', rgb.size, (195, 220, 255))
             rgb = Image.blend(rgb, overlay, 0.06)
+        light_type = normalize_text(str(light.get('type') or ''))
+        contrast = normalize_text(str(light.get('contrast') or ''))
+        if light_type in {'soft', 'suave'}:
+            rgb = ImageEnhance.Contrast(rgb).enhance(0.98)
+            rgb = ImageEnhance.Brightness(rgb).enhance(1.015)
+        elif light_type in {'hard', 'dramatic', 'dura', 'forte'}:
+            rgb = ImageEnhance.Contrast(rgb).enhance(1.08)
+        if contrast in {'low', 'baixo', 'baixa'}:
+            rgb = ImageEnhance.Contrast(rgb).enhance(0.96)
+        elif contrast in {'high', 'alto', 'alta'}:
+            rgb = ImageEnhance.Contrast(rgb).enhance(1.07)
         image = self._harmonize(rgb)
         self.last_info = {'plan': plan.as_dict(), 'guided': extra, 'bank': self.bank.status(), 'refiner': 'off'}
         for asset in [plan.background, plan.pose, plan.face, plan.outfit, plan.object]:

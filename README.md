@@ -1,4 +1,4 @@
-# Corvo Image Engine V0.12 — MVP de Produção Guiada
+# Corvo Image Engine V0.12.1 — MVP de Produção Guiada
 
 A entrada principal agora é **PROMPT + GUIA TXT**. O Engine não tenta substituir a IA que planejou a imagem: ele executa as instruções do guia.
 
@@ -31,6 +31,16 @@ Referências novas ficam como `candidates` por padrão. No modo de produção gu
 
 ## Refinador
 
-O refinador principal continua rodando no navegador. A V0.12 passa as diretivas do `[RENDER]` para o runtime browser e registra instruções que o modelo atual ainda não consegue cumprir generativamente (por exemplo anatomia/redesenho).
+O refinador principal continua rodando no navegador. A V0.12.1 passa as diretivas do `[RENDER]` para o runtime browser e registra instruções que o modelo atual ainda não consegue cumprir generativamente (por exemplo anatomia/redesenho).
 
 O modelo browser atual ainda é o gargalo para redesenho generativo forte; o restante do pipeline já está organizado para trocar esse provider sem refazer a arquitetura.
+
+## V0.12.1 — correções após operação real
+
+- `SEARCH_*` explícito é obrigatório por padrão; falha de busca não é mais mascarada por demo asset.
+- Use `required=false` ou `fallback=demo` quando o guia quiser permitir fallback.
+- Wikimedia Commons agora recebe cabeçalho identificador de cliente.
+- Filtros de provider podem vir do próprio bloco `SEARCH_*`.
+- `[OUTPUT] width`, `height`, `size` e `aspect_ratio` passam a controlar a resolução guiada.
+- Valores semânticos de composição como `subject_scale=large` agora são resolvidos deterministicamente.
+- `[LIGHTING]` simples é aplicado pelo Composer quando não há uma referência visual de iluminação.

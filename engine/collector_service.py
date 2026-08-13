@@ -16,7 +16,7 @@ class CollectorService:
     def provider_names(self) -> list[str]:
         return list(self.providers.keys())
 
-    def search_candidates(self, query: str, providers: Optional[list[str]] = None, per_provider: int = 12, collect_limit: Optional[int] = None) -> dict[str, Any]:
+    def search_candidates(self, query: str, providers: Optional[list[str]] = None, per_provider: int = 12, collect_limit: Optional[int] = None, provider_options: Optional[dict[str, Any]] = None) -> dict[str, Any]:
         provider_names = providers or self.provider_names()
         results: list[dict[str, Any]] = []
         errors: list[str] = []
@@ -28,7 +28,7 @@ class CollectorService:
             if not provider:
                 errors.append(f'provider desconhecido: {name}'); continue
             try:
-                found = provider.search(query, page_size=min(max(1, target_each), 100))
+                found = provider.search(query, page_size=min(max(1, target_each), 100), options=provider_options or {})
                 results.extend(found)
             except Exception as exc:
                 errors.append(f'{name}: {exc}')
@@ -39,10 +39,10 @@ class CollectorService:
     def collect(self, *, query: str, type_name: str, concept: Optional[str] = None, providers: Optional[list[str]] = None,
                 per_provider: int = 12, save_limit: int = 5, auto_approve: bool = False,
                 filters: Optional[dict[str, Any]] = None, collect_limit: Optional[int] = None,
-                keep_limit: Optional[int] = None, search_metadata: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+                keep_limit: Optional[int] = None, search_metadata: Optional[dict[str, Any]] = None, provider_options: Optional[dict[str, Any]] = None) -> dict[str, Any]:
         cfg = filter_pipeline.normalized_filters(filters)
         keep_limit = int(keep_limit if keep_limit is not None else save_limit)
-        search = self.search_candidates(query=query, providers=providers, per_provider=per_provider, collect_limit=collect_limit)
+        search = self.search_candidates(query=query, providers=providers, per_provider=per_provider, collect_limit=collect_limit, provider_options=provider_options)
         concept = concept or query
         kept: list[dict[str, Any]] = []
         rejected: list[dict[str, Any]] = []

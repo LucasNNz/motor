@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+import os
 import requests
 
 
@@ -8,13 +9,32 @@ class OpenverseProvider:
     name = "openverse"
     endpoint = "https://api.openverse.org/v1/images/"
 
-    def search(self, query: str, page_size: int = 20) -> list[dict[str, Any]]:
-        params = {
+    def search(self, query: str, page_size: int = 20, options: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        options = dict(options or {})
+        params: dict[str, Any] = {
             'q': query,
             'page_size': max(1, min(int(page_size or 20), 50)),
-            'license_type': 'commercial,modification',
         }
-        response = requests.get(self.endpoint, params=params, timeout=60)
+        # The guide may explicitly control Openverse filters. The previous MVP
+        # hard-coded commercial+modification for every search, which made the
+        # executor stricter than the guide itself. Keep a derivative-friendly
+        # default, but allow the TXT to override it or request all open media.
+        license_type = options.get('license_type', 'modification')
+        if license_type not in {None, '', 'none', 'all'}:
+            params['license_type'] = str(license_type)
+        elif str(license_type).lower() == 'all':
+            params['license_type'] = 'all'
+        for key in ('license', 'category', 'aspect_ratio', 'size', 'source', 'extension'):
+            value = options.get(key)
+            if value not in {None, ''}:
+                if isinstance(value, (list, tuple)):
+                    value = ','.join(str(x) for x in value)
+                params[key] = value
+        headers = {
+            'User-Agent': os.environ.get('CORVO_USER_AGENT', 'CorvoImageEngine/0.13 (guided visual reference collector)'),
+            'Accept': 'application/json',
+        }
+        response = requests.get(self.endpoint, params=params, headers=headers, timeout=60)
         response.raise_for_status()
         payload = response.json()
         results = []
@@ -27,11 +47,14 @@ class OpenverseProvider:
                 'title': raw.get('title') or query,
                 'author': raw.get('creator'),
                 'license': raw.get('license'),
+                'license_version': raw.get('license_version'),
+                'license_url': raw.get('license_url'),
                 'source_url': raw.get('foreign_landing_url') or raw.get('detail_url') or image_url,
                 'image_url': image_url,
                 'thumbnail_url': raw.get('thumbnail') or image_url,
                 'width': raw.get('width'),
                 'height': raw.get('height'),
+                'category': raw.get('category'),
                 'tags': [x.get('name') for x in raw.get('tags', []) if isinstance(x, dict) and x.get('name')],
                 'raw': raw,
             })

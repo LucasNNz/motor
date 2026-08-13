@@ -58,6 +58,65 @@ class GuidedExecutionService:
             keep_limit = min(keep_limit, 4)
         return collect_limit, min(keep_limit, collect_limit)
 
+    @staticmethod
+    def _search_required(block: dict[str, Any]) -> bool:
+        if block.get('required') is False:
+            return False
+        fallback = str(block.get('fallback') or '').strip().lower()
+        if fallback in {'demo', 'allow_demo', 'optional', 'skip'}:
+            return False
+        return True
+
+    @staticmethod
+    def _round8(value: float) -> int:
+        return max(64, int(round(float(value) / 8.0) * 8))
+
+    def _resolve_output_size(self, guide: ParsedGuide, width: int, height: int) -> tuple[int, int, dict[str, Any]]:
+        out = dict(guide.first('OUTPUT') or {})
+        requested = {'ui_width': int(width), 'ui_height': int(height), **out}
+        explicit_w = out.get('width')
+        explicit_h = out.get('height')
+        if explicit_w and explicit_h:
+            return self._round8(float(explicit_w)), self._round8(float(explicit_h)), requested
+        size = str(out.get('size') or '').lower().replace(' ', '')
+        if 'x' in size:
+            try:
+                w, h = size.split('x', 1)
+                return self._round8(float(w)), self._round8(float(h)), requested
+            except Exception:
+                pass
+        ratio = str(out.get('aspect_ratio') or '').strip()
+        if ':' in ratio:
+            try:
+                rw, rh = [float(x.strip()) for x in ratio.split(':', 1)]
+                if rw > 0 and rh > 0:
+                    short = max(256, min(int(width), int(height)))
+                    if rw >= rh:
+                        resolved_h = short
+                        resolved_w = short * rw / rh
+                    else:
+                        resolved_w = short
+                        resolved_h = short * rh / rw
+                    return self._round8(resolved_w), self._round8(resolved_h), requested
+            except Exception:
+                pass
+        return int(width), int(height), requested
+
+    def _validate_required_searches(self, guide: ParsedGuide, *, allow_candidates: bool) -> None:
+        missing: list[str] = []
+        for spec in self._all_search_specs(guide):
+            if not self._search_required(spec['block']):
+                continue
+            found = memory_manager.search_best(
+                spec['concept'], spec['type'], limit=1, approved_only=not allow_candidates
+            )
+            if not found:
+                missing.append(f"{spec['section']} query={spec['query']!r} concept={spec['concept']!r}")
+        if missing:
+            raise RuntimeError(
+                'Busca obrigatória sem referência utilizável. O Engine não usará asset demo silenciosamente: ' + '; '.join(missing)
+            )
+
     def _all_search_specs(self, guide: ParsedGuide) -> list[dict[str, Any]]:
         specs: list[dict[str, Any]] = []
         explicit_types: set[str] = set()
@@ -115,7 +174,7 @@ class GuidedExecutionService:
                 query=spec['query'], type_name=spec['type'], concept=spec['concept'], providers=spec_providers,
                 per_provider=min(24, max(4, collect_limit // max(1, len(spec_providers)))),
                 save_limit=keep_limit, keep_limit=keep_limit, collect_limit=collect_limit,
-                auto_approve=auto_approve, filters=filters,
+                auto_approve=auto_approve, filters=filters, provider_options=block,
                 search_metadata={
                     'section': section, **block, 'providers_effective': spec_providers,
                     'collect_limit_requested': spec['collect_limit'], 'collect_limit_effective': collect_limit,
@@ -170,6 +229,7 @@ class GuidedExecutionService:
                 auto_approve_collected: bool = False, allow_candidates: bool = False,
                 providers: list[str] | None = None, fast_mvp: bool = False) -> dict[str, Any]:
         guide = guide_parser.parse(guide_text)
+        width, height, output_request = self._resolve_output_size(guide, width, height)
         providers = list(providers or ['openverse', 'wikimedia_commons'])
         operation_id = operation_manager.create(prompt=prompt, guide_text=guide_text)
         started = time.perf_counter()
@@ -187,10 +247,19 @@ class GuidedExecutionService:
                     found = memory_manager.search_best(spec['concept'], spec['type'], limit=10, approved_only=not allow_candidates)
                     search_log.append({'spec': spec, 'library_matches': [{'id': x['id'], 'status': x.get('status')} for x in found]})
 
+            # Explicit SEARCH_* blocks are instructions, not suggestions. Unless the
+            # TXT marks a block optional/fallback, do not hide a failed search by
+            # silently substituting an unrelated demo asset.
+            self._validate_required_searches(guide, allow_candidates=allow_candidates)
+
             compose_started = time.perf_counter()
             base = composer_engine.generate_guided(guide, width, height, allow_candidates=allow_candidates)
             composer_ms = int((time.perf_counter() - compose_started) * 1000)
             composition = composer_engine.last_info
+            composition['output'] = {
+                'width': width, 'height': height, 'aspect_ratio': f'{width}:{height}',
+                'guide_request': output_request,
+            }
             operation_manager.save_image(operation_id, 'etapas/composicao_base.png', base)
             operation_manager.save_image(operation_id, 'etapas/antes_refinamento.png', base)
 
@@ -242,6 +311,7 @@ class GuidedExecutionService:
                 'mode': 'guided_fast_mvp' if fast_mvp else 'guided',
                 'allow_candidates': allow_candidates, 'auto_approve_collected': auto_approve_collected,
                 'providers_default': providers, 'collect_missing': collect_missing,
+                'output_resolved': {'width': width, 'height': height, 'guide_request': output_request},
             })
             operation_manager.write_json(operation_id, 'logs/refinador.json', refiner_log)
             operation_manager.write_json(operation_id, 'logs/condicionamento.json', conditioning_log)
@@ -255,10 +325,15 @@ class GuidedExecutionService:
                 'operation_id': operation_id, 'image': final, 'composition': composition, 'references': copied,
                 'timings': {'collect_ms': collect_ms, 'composer_ms': composer_ms, 'refiner_ms': refine_ms, 'total_ms': total_ms},
                 'refiner': refiner_log, 'guide': guide.as_dict(), 'searches': search_log,
-                'execution': {'allow_candidates': allow_candidates, 'fast_mvp': fast_mvp, 'providers': providers},
+                'execution': {
+                    'allow_candidates': allow_candidates, 'fast_mvp': fast_mvp, 'providers': providers,
+                    'output': {'width': width, 'height': height, 'guide_request': output_request},
+                },
             }
         except Exception as exc:
             errors.append({'stage': 'guided_execution', 'error': str(exc), 'at': time.time()})
+            if search_log:
+                operation_manager.write_json(operation_id, 'logs/buscas.json', search_log)
             operation_manager.write_json(operation_id, 'logs/erros.json', errors)
             operation_manager.finish(operation_id, status='error', diagnostic=str(exc))
             raise
