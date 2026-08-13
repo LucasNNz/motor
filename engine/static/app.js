@@ -1,4 +1,4 @@
-import { browserRuntime, DEFAULT_MODEL, TRANSFORMERS_VERSION } from './browser_runtime.js';
+import { browserRuntime, DEFAULT_MODEL, TRANSFORMERS_VERSION } from './browser_runtime.js?v=0.12.12';
 
 const $ = (id) => document.getElementById(id);
 
@@ -908,7 +908,7 @@ async function exportCurrentSingleOperation() {
     zip.file('logs/execucao.json', JSON.stringify({
       ...(data.execution || {}),
       export_mode: 'browser',
-      export_version: '0.12.11',
+      export_version: '0.12.12',
       final_result_owner: 'browser',
     }, null, 2));
     zip.file('logs/erros.json', JSON.stringify([], null, 2));
@@ -1071,7 +1071,7 @@ async function runBrowserBatch(text) {
   batchSummary.textContent = `LOTE BROWSER · preparando refinador uma única vez para ${items.length} imagem(ns)...`;
   const prepared = await prepareBrowserRefiner();
   const manifest = {
-    version: '0.12.11',
+    version: '0.12.12',
     execution: 'browser_client',
     generated_at: new Date().toISOString(),
     model: browserModel.value || DEFAULT_MODEL,
@@ -1479,7 +1479,7 @@ if (singleOperationExportLink) {
 Promise.all([refreshHealth(), refreshComposerStatus(false), refreshMemoryGallery(), refreshRefinerStatus(), refreshBrowserRuntime()]).then(toggleBackendFields);
 setInterval(refreshHealth, 10000);
 
-// V0.12.11 · exportação de operação no navegador · produção guiada
+// V0.12.12 · exportação de operação no navegador · produção guiada
 for (const button of document.querySelectorAll('.nav-btn')) {
   button.addEventListener('click', () => {
     const view = button.dataset.view || 'create';

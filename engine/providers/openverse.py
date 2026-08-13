@@ -31,7 +31,7 @@ class OpenverseProvider:
                     value = ','.join(str(x) for x in value)
                 params[key] = value
         headers = {
-            'User-Agent': os.environ.get('CORVO_USER_AGENT', 'CorvoImageEngine/0.12.11 (guided visual reference collector)'),
+            'User-Agent': os.environ.get('CORVO_USER_AGENT', 'CorvoImageEngine/0.12.12 (guided visual reference collector)'),
             'Accept': 'application/json',
         }
         response = requests.get(self.endpoint, params=params, headers=headers, timeout=(3.0, 7.0))
