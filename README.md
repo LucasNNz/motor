@@ -1,4 +1,4 @@
-# Corvo Image Engine V0.12.16 — MVP de Produção Guiada
+# Corvo Image Engine V0.12.17 — MVP de Produção Guiada
 
 A entrada principal agora é **PROMPT + GUIA TXT**. O Engine não tenta substituir a IA que planejou a imagem: ele executa as instruções do guia.
 
@@ -78,9 +78,9 @@ No fluxo principal de produção, `Exportar operação` é montado no navegador.
 - candidatos semanticamente errados são descartados antes do download;
 - `STYLE style=2d_semirealistic` ativa achatamento controlado de cores, limpeza e contornos;
 - o log de composição registra `style_transform=deterministic_2d_semirealistic`;
-- o build atual é identificado exclusivamente pelos marcadores da V0.12.16 abaixo.
+- o build atual é identificado exclusivamente pelos marcadores da V0.12.17 abaixo.
 
-## V0.12.16 — contrato composto executável
+## V0.12.17 — recuperação de personagem e cenário
 
 - `[SUBJECT_SEARCH]` é normalizado para `SEARCH_CHARACTER`;
 - `[BACKGROUND_SEARCH]` é normalizado para `SEARCH_BACKGROUND`;
@@ -88,5 +88,10 @@ No fluxo principal de produção, `Exportar operação` é montado no navegador.
 - `canvas=16:9` controla a saída mesmo sem bloco `[OUTPUT]`;
 - personagem de corpo inteiro é composto diretamente sobre o fundo, com escala, contato com o chão e sombra;
 - identidade do personagem e origem brasileira do cenário são verificadas nos metadados;
+- buscas descritivas de personagem também tentam `IDENTIDADE + cosplay` e a identidade compacta;
+- salas brasileiras também tentam consultas compactas em português, incluindo São Paulo;
+- arquivos grandes do Commons são baixados primeiro por miniatura raster de até 1600 px;
+- quando o `[FAIL_POLICY]` autoriza cenário genérico, a localidade só é relaxada nas duas últimas tentativas; “sala de aula” continua obrigatório;
+- a identidade completa de personagens nomeados continua obrigatória — “Naruto” sozinho não valida outro personagem da franquia;
 - busca obrigatória ausente ou sem referência válida gera erro, nunca imagem branca;
-- `/api/health` deve responder `version=0.12.16` e `X-Corvo-Build: 0.12.16-composite-contract`.
+- `/api/health` deve responder `version=0.12.17` e `X-Corvo-Build: 0.12.17-search-recovery`.

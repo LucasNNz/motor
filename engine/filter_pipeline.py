@@ -36,7 +36,7 @@ class FilterPipeline:
         self.session.mount('https://', HTTPAdapter(max_retries=retry))
         self.session.mount('http://', HTTPAdapter(max_retries=retry))
         self.headers = {
-            'User-Agent': 'CorvoImageEngine/0.12.16 (visual-reference-fetcher)',
+            'User-Agent': 'CorvoImageEngine/0.12.17 (visual-reference-fetcher)',
             'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
         }
 
@@ -281,10 +281,10 @@ class FilterPipeline:
                 token for token in semantic_concept.split()
                 if len(token) >= 4 and token not in {'character', 'personagem', 'main', 'principal'}
             ]
-            # A named character must be named by the source metadata. For
-            # "Naruto Uzumaki", accepting Naruto alone is sufficient, while a generic
-            # anime/ninja result is not.
-            if identity_tokens and not any(token in metadata_tokens for token in identity_tokens):
+            # For a named character, require the complete useful identity when more
+            # than one name is present. This prevents a generic franchise tag such as
+            # "Naruto" from validating a different character.
+            if identity_tokens and not all(token in metadata_tokens for token in identity_tokens):
                 return f'metadados sem evidência da identidade {semantic_concept}'
 
         if semantic_type == 'background':
@@ -292,7 +292,12 @@ class FilterPipeline:
             if ({'classroom', 'school'} & semantic_tokens or {'escola', 'aula'} & set(semantic_concept.split())) and not (metadata_tokens & classroom_terms):
                 return 'metadados sem evidência de sala de aula/escola'
             if {'brasil', 'brasileira', 'brasileiro', 'brazil', 'brazilian'} & set(semantic_concept.split()):
-                if not (metadata_tokens & {'brasil', 'brasileira', 'brasileiro', 'brazil', 'brazilian'}):
+                brazil_evidence = {
+                    'brasil', 'brasileira', 'brasileiro', 'brazil', 'brazilian',
+                    'paulo', 'campinas', 'paulinia', 'brasilia', 'bahia', 'ceara',
+                    'pernambuco', 'parana', 'goias', 'unicamp', 'usp', 'etep',
+                }
+                if not filters.get('_allow_generic_background') and not (metadata_tokens & brazil_evidence):
                     return 'metadados sem evidência de ambiente brasileiro'
 
         # Deterministic sense guard for common quiz objects. Search providers may

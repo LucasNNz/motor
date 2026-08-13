@@ -21,10 +21,14 @@ class WikimediaCommonsProvider:
             'gsrlimit': max(1, min(int(page_size or 20), 50)),
             'prop': 'imageinfo|info',
             'iiprop': 'url|size|mime|extmetadata',
+            # Ask Commons for a bounded raster thumbnail as well as the original.
+            # Large originals frequently time out on serverless connections, while
+            # a 1600px thumbnail is ample for reference conditioning/composition.
+            'iiurlwidth': max(512, min(int(options.get('thumbnail_width') or 1600), 2048)),
             'inprop': 'url',
         }
         # Wikimedia requires an identifying User-Agent for API clients.
-        ua = os.environ.get('CORVO_USER_AGENT', 'CorvoImageEngine/0.12.16 (guided visual reference collector)')
+        ua = os.environ.get('CORVO_USER_AGENT', 'CorvoImageEngine/0.12.17 (guided visual reference collector)')
         headers = {
             'User-Agent': ua,
             'Api-User-Agent': ua,
@@ -48,6 +52,7 @@ class WikimediaCommonsProvider:
             image_url = info.get('url')
             if not image_url:
                 continue
+            thumbnail_url = info.get('thumburl') or image_url
             tags = []
             cats = meta.get('Categories', {}) if isinstance(meta.get('Categories'), dict) else {}
             cat_val = cats.get('value') if isinstance(cats, dict) else None
@@ -66,7 +71,8 @@ class WikimediaCommonsProvider:
                 'license_url': license_url,
                 'source_url': page.get('fullurl') or image_url,
                 'image_url': image_url,
-                'thumbnail_url': image_url,
+                'thumbnail_url': thumbnail_url,
+                'download_urls': [u for u in (thumbnail_url, image_url) if u],
                 'width': info.get('width'),
                 'height': info.get('height'),
                 'tags': tags,

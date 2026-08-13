@@ -9,7 +9,7 @@ from PIL import Image
 from .collector_service import collector_service
 from .composer_engine import composer_engine
 from .guide_parser import TYPE_BY_SEARCH_SECTION, guide_parser, ParsedGuide
-from .memory_manager import memory_manager
+from .memory_manager import memory_manager, normalize_text
 from .operation_manager import operation_manager
 from .refiner import build_refiner
 from .reference_conditioning import reference_conditioning_builder, VisualReferenceBundle
@@ -176,7 +176,7 @@ class GuidedExecutionService:
                 numbered.append((idx, str(value).strip()))
         values.extend(v for _, v in sorted(numbered) if v)
 
-        # V0.12.16 compatibility repair. Older guides commonly asked only for
+        # V0.12.17 compatibility repair. Older guides commonly asked only for
         # photographic variants such as ``fork isolated front view``. Openverse can
         # legitimately return tables, hands and tiny thumbnails for those queries,
         # leaving a perfectly usable icon/illustration route unexplored. For object
@@ -209,6 +209,35 @@ class GuidedExecutionService:
                     f'{core} isolated transparent png',
                 ]
             values = clean_route + values
+
+        # Search APIs are much stricter than a web search engine. Long descriptive
+        # character phrases can yield zero results even when Commons contains an
+        # exact, openly licensed cosplay reference. Try compact identity queries
+        # before the descriptive variants; semantic validation still requires the
+        # candidate metadata to identify the requested character.
+        if section == 'SEARCH_CHARACTER':
+            concept = str(spec.get('concept') or '').strip()
+            if concept:
+                identity_route = [
+                    f'{concept} cosplay',
+                    concept,
+                ]
+                values = identity_route + values
+
+        # Locale-heavy classroom queries suffer from the same all-terms problem on
+        # Commons. These compact variants preserve both the environment and Brazil,
+        # and expose useful São Paulo/Campinas media whose metadata may not literally
+        # repeat the English word "Brazilian".
+        if section == 'SEARCH_BACKGROUND':
+            semantic = normalize_text(str(spec.get('concept') or primary))
+            classroom = {'classroom', 'school', 'schoolroom', 'escola', 'aula', 'colegio'} & set(semantic.split())
+            brazil = {'brasil', 'brasileira', 'brasileiro', 'brazil', 'brazilian'} & set(semantic.split())
+            if classroom and brazil:
+                values = [
+                    'sala de aula Brasil',
+                    'sala de aula São Paulo',
+                    'Brazil classroom',
+                ] + values
         out: list[str] = []
         seen: set[str] = set()
         for value in values:
@@ -223,7 +252,10 @@ class GuidedExecutionService:
         keep_limit = max(1, int(spec.get('keep_limit') or 10))
         if fast_mvp:
             # Production MVP prioritizes latency. The requested values remain in logs.
-            collect_limit = min(collect_limit, 6)
+            # Composite searches need a slightly wider Commons window: the first
+            # entity matches are often charts/groups before the full-body image.
+            cap = 12 if spec.get('type') in {'character', 'background'} else 6
+            collect_limit = min(collect_limit, cap)
             keep_limit = min(keep_limit, 2)
         return collect_limit, min(keep_limit, collect_limit)
 
@@ -309,13 +341,13 @@ class GuidedExecutionService:
                 attempts = diag.get('query_attempts') or []
                 if attempts:
                     compact = []
-                    for attempt in attempts[:4]:
+                    for attempt in attempts[:8]:
                         compact.append(f"{attempt.get('query')!r}:{attempt.get('found', 0)}→{attempt.get('saved', 0)}")
                     detail += ', tentativas=' + ' | '.join(compact)
                 traces = diag.get('provider_trace') or []
                 if traces:
                     compact = []
-                    for trace in traces[:4]:
+                    for trace in traces[:8]:
                         compact.append(f"{trace.get('provider')}:{trace.get('status')}:{trace.get('found', 0)}:{trace.get('elapsed_ms', 0)}ms")
                     detail += ', providers=' + ' | '.join(compact)
                 detail += ']'
@@ -373,9 +405,14 @@ class GuidedExecutionService:
     def collect_from_guide(self, guide_text: str, *, providers: list[str], auto_approve: bool = False, fast_mvp: bool = False) -> dict[str, Any]:
         guide = guide_parser.parse(guide_text)
         filters = self._filter_config(guide)
+        fail_policy = normalize_text(' '.join(str(x) for x in (guide.first('FAIL_POLICY').get('_lines') or [])))
+        allow_generic_background = (
+            'aceitar cenario generico' in fail_policy
+            or 'accept generic background' in fail_policy
+        )
         results = []
         global_started = time.monotonic()
-        global_budget = 42.0 if fast_mvp else None
+        global_budget = 52.0 if fast_mvp else None
         for spec in self._all_search_specs(guide):
             section = spec['section']; block = spec['block']
 
@@ -419,6 +456,12 @@ class GuidedExecutionService:
             collect_limit, keep_limit = self._effective_limits(spec, fast_mvp=fast_mvp)
             per_spec_budget = min(10.0, remaining) if remaining is not None else None
             query_sequence = self._queries_for_spec(spec)
+            if spec['type'] == 'background' and allow_generic_background:
+                query_sequence.extend([
+                    'school classroom interior desks chalkboard',
+                    'sala de aula carteiras quadro escolar',
+                ])
+                query_sequence = list(dict.fromkeys(query_sequence))
             query_attempts: list[dict[str, Any]] = []
             aggregate_trace: list[dict[str, Any]] = []
             aggregate_errors: list[str] = []
@@ -437,6 +480,8 @@ class GuidedExecutionService:
                 attempt_filters['_semantic_query'] = query_value
                 attempt_filters['_semantic_concept'] = spec['concept']
                 attempt_filters['_semantic_type'] = spec['type']
+                attempt_filters['_semantic_attempt_index'] = query_index
+                attempt_filters['_semantic_attempt_total'] = len(query_sequence)
                 if spec['type'] == 'character':
                     attempt_filters['require_isolated'] = True
                     attempt_filters['allow_cutout_compatible'] = True
@@ -445,6 +490,12 @@ class GuidedExecutionService:
                     attempt_filters['require_isolated'] = False
                     attempt_filters['prefer_light_background'] = False
                     attempt_filters['reject_busy_background'] = False
+                    # The guide explicitly authorizes a generic classroom only after
+                    # Brazil-targeted searches. Relax locale (never environment) for
+                    # the two appended final attempts.
+                    attempt_filters['_allow_generic_background'] = bool(
+                        allow_generic_background and query_index >= len(query_sequence) - 2
+                    )
                 attempt = collector_service.collect(
                     query=query_value, type_name=spec['type'], concept=spec['concept'], providers=spec_providers,
                     per_provider=min(12, max(2, collect_limit // max(1, len(spec_providers)))),

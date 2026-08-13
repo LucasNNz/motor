@@ -1,5 +1,6 @@
 CORVO IMAGE ENGINE
-VERSION=0.12.16
+VERSION=0.12.17
+X_CORVO_BUILD=0.12.17-search-recovery
 BUILD=ROOT_CLEAN_CACHE_GUARD
 EXPECTED_ROOT_FILES=VERSION.txt,vercel.json,pyproject.toml,requirements.txt,engine/
 DEPLOY_RULE=extract the contents of this ZIP directly into the GitHub repository root; do not place the ZIP folder itself inside the repository.

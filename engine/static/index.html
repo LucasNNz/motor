@@ -5,7 +5,7 @@
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>Corvo Image Engine</title>
-<link href="/styles.css?v=0.12.16" rel="stylesheet"/>
+<link href="/styles.css?v=0.12.17" rel="stylesheet"/>
 </head>
 <body data-view="create">
 <div class="app-shell">
@@ -35,7 +35,7 @@
 <section class="panel browser-panel view-panel view-advanced technical-panel">
 <div class="engine-head">
 <div>
-<h2>Refinador no Navegador · V0.12.16</h2>
+<h2>Refinador no Navegador · V0.12.17</h2>
 <p class="muted">A IA roda no computador que abriu a página. Não exige instalar Python, CUDA, SD.CPP ou servidor local.</p>
 </div>
 <div class="badge" id="browserRuntimeBadge">Detectando navegador...</div>
@@ -109,7 +109,7 @@
 </div>
 </div>
 <div class="setup-note">
-<strong>MVP V0.12.16:</strong> guias compostos com `[SUBJECT_SEARCH]` e `[BACKGROUND_SEARCH]` são normalizados, validados e executados. Uma cena sem personagem ou fundo obrigatório falha claramente em vez de exportar imagem branca.
+<strong>MVP V0.12.17:</strong> buscas longas de personagem e cenário ganham rotas compactas no Commons, com download por miniatura e fallback de cenário por etapas. A identidade obrigatória nunca é substituída por personagem genérico.
       </div>
 </section>
 <main class="workspace-root">
@@ -480,7 +480,7 @@ UM CACHORRO FELIZ EM UM PARQUE, COMPOSIÇÃO LIMPA PARA QUIZ, ILUSTRAÇÃO 2D SE
 </div>
 </section>
 <section class="panel experimental-panel view-panel view-advanced technical-panel">
-<h2>Arquitetura V0.12.16 · Guia-first + Browser-first</h2>
+<h2>Arquitetura V0.12.17 · Guia-first + Browser-first</h2>
 <div class="roadmap-grid">
 <div><strong>VERCEL</strong><span>Distribui o aplicativo e os arquivos; não executa o refinador pesado.</span></div>
 <div><strong>NAVEGADOR</strong><span>Detecta WebGPU, baixa/cacheia o modelo e executa inferência localmente.</span></div>
@@ -489,6 +489,6 @@ UM CACHORRO FELIZ EM UM PARQUE, COMPOSIÇÃO LIMPA PARA QUIZ, ILUSTRAÇÃO 2D SE
 </div>
 </section>
 </div>
-<script src="/app.js?v=0.12.16" type="module"></script>
+<script src="/app.js?v=0.12.17" type="module"></script>
 </body>
 </html>
