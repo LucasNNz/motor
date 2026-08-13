@@ -129,14 +129,24 @@ class MemoryManager:
             self.reload()
 
     def reload(self):
+        self.ensure_dirs()
         self.data = json.loads(self.index_path.read_text(encoding='utf-8'))
-        self.items: list[dict[str, Any]] = self.data.get('items', [])
+        raw_items: list[dict[str, Any]] = self.data.get('items', [])
+        # A biblioteca empacotada/ephemeral pode carregar um índice antigo sem o arquivo físico.
+        # No MVP, referências inexistentes não podem participar do ranking nem bloquear novos IDs.
+        self.items = [item for item in raw_items if self.path_for(item).exists()]
         self.by_id = {item['id']: item for item in self.items}
+        if len(self.items) != len(raw_items):
+            self.data['items'] = self.items
+            self.data['updated_at'] = time.time()
+            self.index_path.parent.mkdir(parents=True, exist_ok=True)
+            self.index_path.write_text(json.dumps(self.data, ensure_ascii=False, indent=2), encoding='utf-8')
         return self.status()
 
     def save(self):
         self.data['items'] = self.items
         self.data['updated_at'] = time.time()
+        self.index_path.parent.mkdir(parents=True, exist_ok=True)
         self.index_path.write_text(json.dumps(self.data, ensure_ascii=False, indent=2), encoding='utf-8')
 
     def _category_name(self, type_name: str) -> str:
@@ -278,6 +288,9 @@ class MemoryManager:
         item_id = self._next_id(type_name, concept)
         concept_root = self._concept_root(type_name, concept)
         local_path = concept_root / state / f'{item_id}.png'
+        # Defesa extra para runtimes efêmeros (Vercel /tmp): não assumir que a árvore
+        # continua existindo entre a resolução do caminho e a gravação do arquivo.
+        local_path.parent.mkdir(parents=True, exist_ok=True)
         img.save(local_path, format='PNG')
         item = {
             'id': item_id, 'type': type_name, 'category': type_name, 'concept': concept,
@@ -372,6 +385,7 @@ class MemoryManager:
     def record_search_history(self, *, type_name: str, concept: str, entry: dict[str, Any]):
         root = self._concept_root(type_name, concept)
         path = root / 'search_history.json'
+        path.parent.mkdir(parents=True, exist_ok=True)
         rows = []
         if path.exists():
             try: rows = json.loads(path.read_text(encoding='utf-8'))
