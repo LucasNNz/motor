@@ -26,22 +26,22 @@ DEFAULT_FILTERS = {
 class FilterPipeline:
     def __init__(self):
         self.session = requests.Session()
-        retry = Retry(total=2, connect=2, read=2, backoff_factor=0.35, status_forcelist=(429, 500, 502, 503, 504), allowed_methods=frozenset(['GET']))
+        retry = Retry(total=0, connect=0, read=0, backoff_factor=0.0, status_forcelist=(429, 500, 502, 503, 504), allowed_methods=frozenset(['GET']))
         self.session.mount('https://', HTTPAdapter(max_retries=retry))
         self.session.mount('http://', HTTPAdapter(max_retries=retry))
         self.headers = {
-            'User-Agent': 'CorvoImageEngine/0.12.2 (visual-reference-fetcher)',
+            'User-Agent': 'CorvoImageEngine/0.12.3 (visual-reference-fetcher)',
             'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
         }
 
     def download_image(self, url: str) -> bytes:
-        response = self.session.get(url, timeout=45, headers=self.headers, allow_redirects=True)
+        response = self.session.get(url, timeout=(2.0, 3.0), headers=self.headers, allow_redirects=True)
         response.raise_for_status()
         if not response.content:
             raise ValueError('download vazio')
         return response.content
 
-    def download_candidate(self, candidate: dict[str, Any]) -> tuple[bytes, str, list[dict[str, str]]]:
+    def download_candidate(self, candidate: dict[str, Any], *, max_attempts: int | None = None) -> tuple[bytes, str, list[dict[str, str]]]:
         urls = []
         for value in (candidate.get('download_urls') or []):
             if value and value not in urls:
@@ -51,6 +51,8 @@ class FilterPipeline:
                 urls.append(str(value))
         attempts: list[dict[str, str]] = []
         last_error: Exception | None = None
+        if max_attempts is not None:
+            urls = urls[:max(1, int(max_attempts))]
         for url in urls:
             try:
                 data = self.download_image(url)

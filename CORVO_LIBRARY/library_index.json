@@ -1,6 +1,77 @@
 {
   "version": 2,
   "created_at": 1786595356.200814,
-  "updated_at": 1786630964.5951374,
-  "items": []
+  "updated_at": 1786632828.4698775,
+  "items": [
+    {
+      "id": "obj_garfo_v123_0001",
+      "type": "object",
+      "category": "object",
+      "concept": "garfo_v123",
+      "tags": [
+        "cutlery",
+        "fork",
+        "fork cutlery",
+        "garfo_v123",
+        "object"
+      ],
+      "style": null,
+      "local_path": "CORVO_LIBRARY/OBJECTS/garfo_v123/candidates/obj_garfo_v123_0001.png",
+      "source": "openverse",
+      "source_url": "https://example.invalid/fork",
+      "original_url": "https://example.invalid/fork",
+      "author": "test",
+      "license": "cc0",
+      "title": "Fork cutlery isolated",
+      "query": "fork cutlery",
+      "quality_score": 0.65,
+      "relevance_score": 0.66,
+      "status": "candidates",
+      "approved": false,
+      "preferred": false,
+      "blocked": false,
+      "used_count": 1,
+      "operations_used": [
+        "operacao_1786632828_2e7ced"
+      ],
+      "approved_results": 0,
+      "rejected_results": 0,
+      "success_rate": 0.0,
+      "created_at": 1786632828.305366,
+      "collected_at": 1786632828.3053663,
+      "width": 640,
+      "height": 640,
+      "perceptual_hash": "ffffffffffffffff",
+      "sha1": "1eba186da59f6e324bd80cb3339eefb5ea476230",
+      "metadata": {
+        "width": 640,
+        "height": 640,
+        "aspect_ratio": 1.0,
+        "transparent": false,
+        "search": {
+          "section": "SEARCH_OBJECT",
+          "provider": "openverse",
+          "query": "fork cutlery",
+          "reference_target": "garfo_v123",
+          "required": true,
+          "collect_limit": 20,
+          "keep_limit": 5,
+          "providers_effective": [
+            "openverse"
+          ],
+          "collect_limit_requested": 20,
+          "collect_limit_effective": 6,
+          "keep_limit_requested": 5,
+          "keep_limit_effective": 2,
+          "fast_mvp": true,
+          "processing_budget_seconds": 10.0
+        },
+        "filter_reason": "ok",
+        "downloaded_from": "mock://fork",
+        "download_attempts": [],
+        "rank": 1,
+        "shortlisted": true
+      }
+    }
+  ]
 }

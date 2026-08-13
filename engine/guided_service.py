@@ -54,8 +54,8 @@ class GuidedExecutionService:
         keep_limit = max(1, int(spec.get('keep_limit') or 10))
         if fast_mvp:
             # Production MVP prioritizes latency. The requested values remain in logs.
-            collect_limit = min(collect_limit, 16)
-            keep_limit = min(keep_limit, 4)
+            collect_limit = min(collect_limit, 6)
+            keep_limit = min(keep_limit, 2)
         return collect_limit, min(keep_limit, collect_limit)
 
     @staticmethod
@@ -128,6 +128,12 @@ class GuidedExecutionService:
                 reasons = diag.get('top_rejection_reasons') or []
                 if reasons:
                     detail += ', rejeicoes=' + ' | '.join(f"{reason} ({count})" for reason, count in reasons[:4])
+                if diag.get('budget_exhausted'):
+                    detail += ', budget_coleta=esgotado'
+                if diag.get('candidates_processed') is not None:
+                    detail += f", processados={diag.get('candidates_processed')}"
+                if diag.get('processing_ms') is not None:
+                    detail += f", tempo_coleta_ms={diag.get('processing_ms')}"
                 detail += ']'
             missing.append(detail)
         if missing:
@@ -184,25 +190,73 @@ class GuidedExecutionService:
         guide = guide_parser.parse(guide_text)
         filters = self._filter_config(guide)
         results = []
+        global_started = time.monotonic()
+        global_budget = 42.0 if fast_mvp else None
         for spec in self._all_search_specs(guide):
             section = spec['section']; block = spec['block']
+
+            # In the production MVP, an optional fallback search of the same component
+            # is skipped once a usable candidate already exists. This avoids spending
+            # serverless time on a second provider that the guide marked optional.
+            if fast_mvp and not self._search_required(block):
+                existing = memory_manager.search_best(spec['concept'], spec['type'], limit=1, approved_only=False)
+                if existing:
+                    results.append({
+                        'spec': spec, 'providers': self._providers_for_spec(block, providers),
+                        'skipped': True, 'skip_reason': 'optional_fallback_already_satisfied',
+                        'result': {
+                            'query': spec['query'], 'concept': spec['concept'], 'type': spec['type'],
+                            'saved_count': 0, 'diagnostics': {
+                                'candidates_found': 0, 'kept_after_filter': 0, 'saved_count': 0,
+                                'provider_errors': [], 'skipped': True,
+                                'skip_reason': 'optional_fallback_already_satisfied',
+                            },
+                        },
+                    })
+                    continue
+
+            remaining = None if global_budget is None else max(0.0, global_budget - (time.monotonic() - global_started))
+            if remaining is not None and remaining < 2.0:
+                results.append({
+                    'spec': spec, 'providers': self._providers_for_spec(block, providers),
+                    'skipped': True, 'skip_reason': 'global_fast_mvp_time_budget',
+                    'result': {
+                        'query': spec['query'], 'concept': spec['concept'], 'type': spec['type'],
+                        'saved_count': 0, 'diagnostics': {
+                            'candidates_found': 0, 'kept_after_filter': 0, 'saved_count': 0,
+                            'provider_errors': ['orçamento global de coleta do MVP esgotado'],
+                            'budget_exhausted': True,
+                        },
+                    },
+                })
+                continue
+
             spec_providers = self._providers_for_spec(block, providers)
             collect_limit, keep_limit = self._effective_limits(spec, fast_mvp=fast_mvp)
+            per_spec_budget = min(10.0, remaining) if remaining is not None else None
             result = collector_service.collect(
                 query=spec['query'], type_name=spec['type'], concept=spec['concept'], providers=spec_providers,
-                per_provider=min(24, max(4, collect_limit // max(1, len(spec_providers)))),
+                per_provider=min(12, max(2, collect_limit // max(1, len(spec_providers)))),
                 save_limit=keep_limit, keep_limit=keep_limit, collect_limit=collect_limit,
                 auto_approve=auto_approve, filters=filters, provider_options=block,
+                processing_budget_seconds=per_spec_budget,
+                max_download_attempts=2 if fast_mvp else None,
+                stop_when_kept=fast_mvp,
                 search_metadata={
                     'section': section, **block, 'providers_effective': spec_providers,
                     'collect_limit_requested': spec['collect_limit'], 'collect_limit_effective': collect_limit,
                     'keep_limit_requested': spec['keep_limit'], 'keep_limit_effective': keep_limit,
-                    'fast_mvp': fast_mvp,
+                    'fast_mvp': fast_mvp, 'processing_budget_seconds': per_spec_budget,
                 },
             )
             results.append({'spec': spec, 'providers': spec_providers, 'effective_collect_limit': collect_limit, 'effective_keep_limit': keep_limit, 'result': result})
         composer_engine.reload_memory()
-        return {'guide': guide.as_dict(), 'filters': filters, 'results': results, 'memory': memory_manager.status(), 'fast_mvp': fast_mvp}
+        return {
+            'guide': guide.as_dict(), 'filters': filters, 'results': results,
+            'memory': memory_manager.status(), 'fast_mvp': fast_mvp,
+            'collect_total_ms': int((time.monotonic() - global_started) * 1000),
+            'collect_budget_seconds': global_budget,
+        }
 
     def _should_collect(self, guide: ParsedGuide, *, allow_candidates: bool = False) -> bool:
         for spec in self._all_search_specs(guide):

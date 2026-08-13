@@ -39,8 +39,13 @@ class CollectorService:
     def collect(self, *, query: str, type_name: str, concept: Optional[str] = None, providers: Optional[list[str]] = None,
                 per_provider: int = 12, save_limit: int = 5, auto_approve: bool = False,
                 filters: Optional[dict[str, Any]] = None, collect_limit: Optional[int] = None,
-                keep_limit: Optional[int] = None, search_metadata: Optional[dict[str, Any]] = None, provider_options: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+                keep_limit: Optional[int] = None, search_metadata: Optional[dict[str, Any]] = None, provider_options: Optional[dict[str, Any]] = None,
+                processing_budget_seconds: Optional[float] = None, max_download_attempts: Optional[int] = None,
+                stop_when_kept: bool = False) -> dict[str, Any]:
         cfg = filter_pipeline.normalized_filters(filters)
+        collect_started = time.monotonic()
+        budget_exhausted = False
+        candidates_processed = 0
         keep_limit = int(keep_limit if keep_limit is not None else save_limit)
         search = self.search_candidates(query=query, providers=providers, per_provider=per_provider, collect_limit=collect_limit, provider_options=provider_options)
         concept = concept or query
@@ -51,11 +56,25 @@ class CollectorService:
         saved_rejected: list[dict[str, Any]] = []
 
         for cand in search['candidates']:
+            if processing_budget_seconds is not None and (time.monotonic() - collect_started) >= float(processing_budget_seconds):
+                budget_exhausted = True
+                break
+            if stop_when_kept and len(kept) >= max(1, keep_limit):
+                break
+            candidates_processed += 1
             url = cand.get('image_url') or cand.get('thumbnail_url')
             if not url:
                 rejected.append({'candidate': cand, 'reason': 'sem url de imagem'}); continue
+            # Metadata dimensions are cheap: do not download obviously undersized files.
+            cw, ch = cand.get('width'), cand.get('height')
             try:
-                image_bytes, downloaded_from, download_attempts = filter_pipeline.download_candidate(cand)
+                if cw and ch and (int(cw) < cfg['min_resolution'] or int(ch) < cfg['min_resolution']):
+                    rejected.append({'candidate': cand, 'reason': f"metadados: resolução abaixo de {cfg['min_resolution']}px"})
+                    continue
+            except Exception:
+                pass
+            try:
+                image_bytes, downloaded_from, download_attempts = filter_pipeline.download_candidate(cand, max_attempts=max_download_attempts)
                 inspection = filter_pipeline.inspect(image_bytes)
                 qscore = filter_pipeline.quality_score(inspection['width'], inspection['height'], inspection['transparent'], cand.get('title'), cand.get('tags') or [])
                 rscore = filter_pipeline.relevance_score(query, cand.get('title'), cand.get('tags') or [], concept)
@@ -124,6 +143,9 @@ class CollectorService:
             'saved_count': len(saved_candidates),
             'saved_rejected_count': len(saved_rejected),
             'top_rejection_reasons': sorted(rejection_reasons.items(), key=lambda x: x[1], reverse=True)[:8],
+            'candidates_processed': candidates_processed,
+            'budget_exhausted': budget_exhausted,
+            'processing_ms': int((time.monotonic() - collect_started) * 1000),
         }
 
         history = {

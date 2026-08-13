@@ -136,7 +136,9 @@ async function api(path, options = {}) {
     ...options,
   });
   if (!response.ok) {
-    let detail = `${response.status} ${response.statusText}`.trim();
+    let detail = response.status === 504
+      ? 'Tempo limite do servidor durante a operação. A coleta será abortada e deve retornar diagnóstico em vez de esperar indefinidamente.'
+      : `${response.status} ${response.statusText}`.trim();
     try {
       const data = await response.json();
       detail = data.detail || data.message || detail;

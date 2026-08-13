@@ -1,0 +1,42 @@
+[
+  {
+    "query": "fork cutlery",
+    "providers": [
+      "openverse"
+    ],
+    "results_found": 1,
+    "downloaded": 1,
+    "rejected": 0,
+    "candidates_saved": 1,
+    "approved": 0,
+    "filters": {
+      "min_resolution": 384,
+      "reject_text": false,
+      "reject_logos": false,
+      "reject_watermarks": false,
+      "remove_duplicates": true,
+      "remove_near_duplicates": true,
+      "quality_threshold": 0.5,
+      "similarity_threshold": 0.96
+    },
+    "search_metadata": {
+      "section": "SEARCH_OBJECT",
+      "provider": "openverse",
+      "query": "fork cutlery",
+      "reference_target": "garfo_v123",
+      "required": true,
+      "collect_limit": 20,
+      "keep_limit": 5,
+      "providers_effective": [
+        "openverse"
+      ],
+      "collect_limit_requested": 20,
+      "collect_limit_effective": 6,
+      "keep_limit_requested": 5,
+      "keep_limit_effective": 2,
+      "fast_mvp": true,
+      "processing_budget_seconds": 10.0
+    },
+    "date": 1786632828.3058536
+  }
+]
