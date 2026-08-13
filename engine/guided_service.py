@@ -385,6 +385,56 @@ class GuidedExecutionService:
                 return True
         return False
 
+    def _reference_overrides_from_search_log(self, guide: ParsedGuide, search_log: list[dict[str, Any]], *, allow_candidates: bool) -> dict[str, str]:
+        """Pin references selected by this operation before the Composer runs.
+
+        The library remains reusable, but a freshly collected reference must not lose
+        to an older candidate left in a warm serverless /tmp. The first search block
+        for each component has priority; later blocks are fallbacks.
+        """
+        overrides: dict[str, str] = {}
+        for entry in search_log or []:
+            spec = entry.get('spec') or {}
+            type_name = str(spec.get('type') or '').strip()
+            if not type_name or type_name in overrides:
+                continue
+            result = entry.get('result') or {}
+            saved = list(result.get('saved_items') or [])
+            chosen = next((x for x in saved if x.get('id') and x.get('status') != 'rejected' and not x.get('blocked')), None)
+            if chosen:
+                overrides[type_name] = chosen['id']
+                entry['selected_for_operation'] = chosen['id']
+                continue
+            # If this exact source/hash was already in the library, collection records
+            # it as a duplicate. Reuse that exact item instead of running a new global
+            # ranking that could select an unrelated older candidate.
+            duplicate = next((
+                x for x in (result.get('rejected') or [])
+                if x.get('library_id') and 'já existe na biblioteca' in str(x.get('reason') or '')
+            ), None)
+            if duplicate and memory_manager.by_id.get(duplicate['library_id']):
+                overrides[type_name] = duplicate['library_id']
+                entry['selected_for_operation'] = duplicate['library_id']
+                entry['selected_reason'] = 'duplicate_reused'
+                continue
+            matches = list(entry.get('library_matches') or [])
+            chosen_match = next((x for x in matches if x.get('id') and x.get('status') != 'rejected'), None)
+            if chosen_match:
+                overrides[type_name] = chosen_match['id']
+                entry['selected_for_operation'] = chosen_match['id']
+
+        # Duplicate downloads or a skipped optional block can legitimately produce no
+        # saved_items even though the library contains a usable reference. Resolve only
+        # missing component types here; never replace a current-operation pin.
+        for spec in self._all_search_specs(guide):
+            type_name = spec['type']
+            if type_name in overrides:
+                continue
+            found = memory_manager.search_best(spec['concept'], type_name, limit=1, approved_only=not allow_candidates)
+            if found:
+                overrides[type_name] = found[0]['id']
+        return overrides
+
     def _selected_references(self, guide: ParsedGuide, composition: dict[str, Any], *, allow_candidates: bool = False) -> list[dict[str, Any]]:
         refs: dict[str, dict[str, Any]] = {}
         plan = (composition or {}).get('plan') or {}
@@ -393,15 +443,31 @@ class GuidedExecutionService:
             item_id = item.get('id')
             if item_id:
                 refs[f'composer_{label}'] = {'label': f'composer_{label}', 'id': item_id, 'source': item.get('source'), 'file': item.get('file')}
+        plan_type_map = {
+            'background': plan.get('background') or {},
+            'pose': plan.get('pose') or {},
+            'face': plan.get('face') or {},
+            'expression': plan.get('face') or {},
+            'object': plan.get('object') or {},
+            'clothes': plan.get('outfit') or {},
+            'outfit': plan.get('outfit') or {},
+        }
         for spec in self._all_search_specs(guide):
-            found = memory_manager.search_best(spec['concept'], spec['type'], limit=1, approved_only=not allow_candidates)
-            if found:
+            type_name = spec['type']
+            selected = plan_type_map.get(type_name) or {}
+            selected_id = selected.get('id')
+            if selected_id and memory_manager.by_id.get(selected_id):
+                item = memory_manager.by_id[selected_id]
+            else:
+                found = memory_manager.search_best(spec['concept'], type_name, limit=1, approved_only=not allow_candidates)
+                if not found:
+                    continue
                 item = found[0]
-                refs[f"guide_{spec['type']}"] = {
-                    'label': f"guide_{spec['type']}", 'id': item['id'], 'source': item.get('source'),
-                    'file': item.get('local_path'), 'concept': item.get('concept'), 'query': spec['query'],
-                    'preferred': item.get('preferred'), 'success_rate': item.get('success_rate', 0), 'status': item.get('status'),
-                }
+            refs[f"guide_{type_name}"] = {
+                'label': f"guide_{type_name}", 'id': item['id'], 'source': item.get('source'),
+                'file': item.get('local_path'), 'concept': item.get('concept'), 'query': spec['query'],
+                'preferred': item.get('preferred'), 'success_rate': item.get('success_rate', 0), 'status': item.get('status'),
+            }
         return list(refs.values())
 
     def _guided_refiner_prompt(self, prompt: str, guide: ParsedGuide) -> str:
@@ -429,7 +495,7 @@ class GuidedExecutionService:
         search_log: list[dict[str, Any]] = []
         errors: list[dict[str, Any]] = []
         try:
-            if collect_missing and self._should_collect(guide, allow_candidates=allow_candidates):
+            if collect_missing and (fast_mvp or self._should_collect(guide, allow_candidates=allow_candidates)):
                 collect_started = time.perf_counter()
                 collected = self.collect_from_guide(guide_text, providers=providers, auto_approve=auto_approve_collected, fast_mvp=fast_mvp)
                 search_log = collected['results']
@@ -444,9 +510,15 @@ class GuidedExecutionService:
             # TXT marks a block optional/fallback, do not hide a failed search by
             # silently substituting an unrelated demo asset.
             self._validate_required_searches(guide, allow_candidates=allow_candidates, search_log=search_log)
+            reference_overrides = self._reference_overrides_from_search_log(
+                guide, search_log, allow_candidates=allow_candidates
+            )
 
             compose_started = time.perf_counter()
-            base = composer_engine.generate_guided(guide, width, height, allow_candidates=allow_candidates)
+            base = composer_engine.generate_guided(
+                guide, width, height, allow_candidates=allow_candidates,
+                reference_overrides=reference_overrides,
+            )
             composer_ms = int((time.perf_counter() - compose_started) * 1000)
             composition = composer_engine.last_info
             composition['output'] = {
@@ -504,6 +576,7 @@ class GuidedExecutionService:
                 'mode': 'guided_fast_mvp' if fast_mvp else 'guided',
                 'allow_candidates': allow_candidates, 'auto_approve_collected': auto_approve_collected,
                 'providers_default': providers, 'collect_missing': collect_missing,
+                'reference_overrides': reference_overrides,
                 'output_resolved': {'width': width, 'height': height, 'guide_request': output_request},
             })
             operation_manager.write_json(operation_id, 'logs/refinador.json', refiner_log)
@@ -520,6 +593,7 @@ class GuidedExecutionService:
                 'refiner': refiner_log, 'guide': guide.as_dict(), 'searches': search_log,
                 'execution': {
                     'allow_candidates': allow_candidates, 'fast_mvp': fast_mvp, 'providers': providers,
+                    'reference_overrides': reference_overrides,
                     'output': {'width': width, 'height': height, 'guide_request': output_request},
                 },
             }

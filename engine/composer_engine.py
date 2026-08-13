@@ -396,9 +396,20 @@ class ComposerEngine:
         return item
 
     @staticmethod
-    def _crop_alpha_subject(item: Image.Image, pad_ratio: float = 0.035) -> Image.Image:
+    def _crop_alpha_subject(item: Image.Image, pad_ratio: float = 0.035, alpha_threshold: int = 56) -> Image.Image:
+        """Crop around the real foreground, ignoring faint alpha halos/noise.
+
+        Using ``alpha.getbbox()`` directly treats even alpha=1 as subject. After a
+        background-removal blur that can leave a nearly full-canvas halo, causing
+        subject_scale to resize the old photo canvas instead of the object.
+        """
         item = item.convert("RGBA")
-        bbox = item.getchannel("A").getbbox()
+        alpha = item.getchannel("A")
+        strong = alpha.point(lambda v: 255 if v >= alpha_threshold else 0)
+        bbox = strong.getbbox()
+        if not bbox:
+            # Fall back to any visible alpha only when there is no strong foreground.
+            bbox = alpha.getbbox()
         if not bbox:
             return item
         left, top, right, bottom = bbox
@@ -512,7 +523,9 @@ class ComposerEngine:
                 subj_rules.get('orientation') or rules.get('subject_orientation') or
                 ('vertical' if normalize_text(str(obj_rules.get('desired_view') or obj_rules.get('view') or '')) in {'front','frontal'} else None)
             )
+            source_size = [obj.width, obj.height]
             obj, rotated_deg = self._orient_subject(obj, orientation)
+            oriented_size = [obj.width, obj.height]
 
             scale = self._fraction(rules.get('object_scale', rules.get('subject_scale')), 0.62)
             pos = rules.get('subject_position')
@@ -523,7 +536,7 @@ class ComposerEngine:
             # `subject_scale` applies to the subject's main axis, not the canvas short side.
             if orient_norm in {'vertical','portrait','upright','em_pe'}:
                 target_h = max(32, int(height * min(scale, 0.86)))
-                target_w = max(32, int(width * 0.64))
+                target_w = max(32, int(width * 0.82))
             elif orient_norm in {'horizontal','landscape'}:
                 target_w = max(32, int(width * min(scale, 0.86)))
                 target_h = max(32, int(height * 0.52))
@@ -548,6 +561,7 @@ class ComposerEngine:
             self.last_info.setdefault('composer_geometry', {})
             self.last_info['composer_geometry'] = {
                 'orientation_requested': orientation, 'rotation_applied_deg': round(rotated_deg,2),
+                'source_subject_px': source_size, 'oriented_subject_px': oriented_size,
                 'subject_scale': scale, 'subject_box_px':[x,y,rw,rh], 'center':[cx,cy],
             }
         return base
@@ -591,35 +605,46 @@ class ComposerEngine:
                 parts.append(str(value))
         return normalize_text(' '.join(parts))
 
-    def _guided_asset(self, category: str, terms: str, default_id: Optional[str] = None, allow_candidates: bool = False):
+    @staticmethod
+    def _memory_asset(item: dict[str, Any], category: str) -> dict[str, Any]:
+        return {
+            'id': item['id'], 'category': item.get('type', category), 'tags': item.get('tags', []),
+            'file': item.get('local_path'), 'local_path': item.get('local_path'), 'source': item.get('source', 'library'),
+            'quality_score': item.get('quality_score', 0), 'relevance_score': item.get('relevance_score', 0),
+            'approved': item.get('status') == 'approved' or bool(item.get('approved')), 'concept': item.get('concept'), 'title': item.get('title'),
+            'compatible_pose': item.get('metadata', {}).get('compatible_pose'), 'anchors': item.get('metadata', {}).get('anchors'),
+            'composition_suitability': item.get('metadata', {}).get('composition_suitability'),
+            'visual_metrics': item.get('metadata', {}).get('visual_metrics'),
+        }
+
+    def _guided_asset(self, category: str, terms: str, default_id: Optional[str] = None, allow_candidates: bool = False, reference_id: Optional[str] = None):
+        # A reference collected/selected for the current operation must win over the
+        # global library ranking. Otherwise a warm Vercel /tmp can resurrect an older
+        # candidate and make the guide non-deterministic.
+        if reference_id:
+            pinned = memory_manager.by_id.get(reference_id)
+            if pinned and pinned.get('type') == category and pinned.get('status') != 'rejected' and not pinned.get('blocked'):
+                return self._memory_asset(pinned, category)
         # Guided production may use shortlisted candidates immediately for this operation,
         # while keeping their library state auditable as candidates.
         mem = memory_manager.search_best(concept=terms or category, type_name=category, limit=1, approved_only=not allow_candidates)
         if mem:
-            item = mem[0]
-            return {
-                'id': item['id'], 'category': item.get('type', category), 'tags': item.get('tags', []),
-                'file': item.get('local_path'), 'local_path': item.get('local_path'), 'source': item.get('source', 'library'),
-                'quality_score': item.get('quality_score', 0), 'relevance_score': item.get('relevance_score', 0),
-                'approved': item.get('status') == 'approved' or bool(item.get('approved')), 'concept': item.get('concept'), 'title': item.get('title'),
-                'compatible_pose': item.get('metadata', {}).get('compatible_pose'), 'anchors': item.get('metadata', {}).get('anchors'),
-                'composition_suitability': item.get('metadata', {}).get('composition_suitability'),
-                'visual_metrics': item.get('metadata', {}).get('visual_metrics'),
-            }
+            return self._memory_asset(mem[0], category)
         asset, confidence = self.bank.best(category, terms, default_id=default_id)
         if confidence <= 0 and default_id is None:
             return None
         return asset
 
-    def plan_from_guide(self, guide, *, allow_candidates: bool = False) -> tuple[Plan, dict[str, Any]]:
+    def plan_from_guide(self, guide, *, allow_candidates: bool = False, reference_overrides: Optional[dict[str, str]] = None) -> tuple[Plan, dict[str, Any]]:
         # `guide` can be ParsedGuide or a plain dictionary produced by it.
         first = guide.first if hasattr(guide, 'first') else lambda name: ((guide.get('sections', {}).get(name.upper()) or [{}])[0])
         scene = first('SCENE') or {}
         comp = first('COMPOSITION') or {}
+        reference_overrides = dict(reference_overrides or {})
         searches = {}
         if hasattr(guide, 'search_blocks'):
             for name, block in guide.search_blocks():
-                searches[name] = block
+                searches.setdefault(name, block)
         else:
             for name, rows in guide.get('sections', {}).items():
                 if name.startswith('SEARCH_') and rows:
@@ -651,11 +676,11 @@ class ComposerEngine:
             or str(scene.get('subject_type') or '').lower() in {'character', 'personagem', 'person'}
             or str(subject_block.get('type') or '').lower() in {'character', 'personagem', 'person'}
         )
-        background = self._guided_asset('background', bg_terms, allow_candidates=allow_candidates) if bg_search_block else None
-        pose = self._guided_asset('pose', pose_terms, default_id='pose_standing_center', allow_candidates=allow_candidates) if has_character else None
-        face = self._guided_asset('face', face_terms, default_id='face_neutral', allow_candidates=allow_candidates) if has_character else None
-        outfit = self._guided_asset('outfit', cloth_terms or char_terms, allow_candidates=allow_candidates) if has_character else None
-        obj = self._guided_asset('object', obj_terms, allow_candidates=allow_candidates) if obj_terms else None
+        background = self._guided_asset('background', bg_terms, allow_candidates=allow_candidates, reference_id=reference_overrides.get('background')) if bg_search_block else None
+        pose = self._guided_asset('pose', pose_terms, default_id='pose_standing_center', allow_candidates=allow_candidates, reference_id=reference_overrides.get('pose')) if has_character else None
+        face = self._guided_asset('face', face_terms, default_id='face_neutral', allow_candidates=allow_candidates, reference_id=reference_overrides.get('face')) if has_character else None
+        outfit = self._guided_asset('outfit', cloth_terms or char_terms, allow_candidates=allow_candidates, reference_id=reference_overrides.get('outfit')) if has_character else None
+        obj = self._guided_asset('object', obj_terms, allow_candidates=allow_candidates, reference_id=reference_overrides.get('object')) if obj_terms else None
         confs = [0.7 if x else 0 for x in [background, pose, face, outfit, obj] if x is not None]
         plan = Plan(
             prompt='[GUIDED_EXECUTION]', normalized_prompt='guided_execution', background=background, pose=pose,
@@ -663,7 +688,7 @@ class ComposerEngine:
             mode='character_scene' if has_character else 'object_only', confidence=sum(confs)/len(confs) if confs else 0.0,
         )
         extra = {
-            'scene': scene, 'composition_rules': comp, 'searches': searches, 'allow_candidates': allow_candidates,
+            'scene': scene, 'composition_rules': comp, 'searches': searches, 'allow_candidates': allow_candidates, 'reference_overrides': reference_overrides,
             'lighting_request': light_block, 'background_request': bg_directive, 'style_request': first('STYLE') or {}, 'camera_request': camera_block,
             'object_request': obj_block, 'subject_request': subject_block,
             'selected': {
@@ -676,9 +701,9 @@ class ComposerEngine:
         }
         return plan, extra
 
-    def generate_guided(self, guide, width: int, height: int, *, allow_candidates: bool = False) -> Image.Image:
+    def generate_guided(self, guide, width: int, height: int, *, allow_candidates: bool = False, reference_overrides: Optional[dict[str, str]] = None) -> Image.Image:
         self.bank.reload()
-        plan, extra = self.plan_from_guide(guide, allow_candidates=allow_candidates)
+        plan, extra = self.plan_from_guide(guide, allow_candidates=allow_candidates, reference_overrides=reference_overrides)
         if plan.mode == 'character_scene':
             image = self._compose_character_scene(plan, width, height)
         else:
