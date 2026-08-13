@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 import json
 import re
 import unicodedata
@@ -370,6 +372,102 @@ class ComposerEngine:
         base.alpha_composite(item, (dx, dy))
 
     @staticmethod
+    def _remove_uniform_background(item: Image.Image) -> Image.Image:
+        """Create alpha for studio/plain backgrounds using border color; deterministic MVP cutout."""
+        item = item.convert('RGBA')
+        alpha_extrema = item.getchannel('A').getextrema()
+        if alpha_extrema != (255,255) or item.width <= 12 or item.height <= 12:
+            return item
+        rgb_item = item.convert('RGB')
+        corners = [
+            rgb_item.getpixel((1,1)), rgb_item.getpixel((rgb_item.width-2,1)),
+            rgb_item.getpixel((1,rgb_item.height-2)), rgb_item.getpixel((rgb_item.width-2,rgb_item.height-2)),
+        ]
+        spread = max(max(c[i] for c in corners)-min(c[i] for c in corners) for i in range(3))
+        if spread > 34:
+            return item
+        bg_color = tuple(sum(c[i] for c in corners)//len(corners) for i in range(3))
+        diff = ImageChops.difference(rgb_item, Image.new('RGB', rgb_item.size, bg_color))
+        r,g,b = diff.split()
+        magnitude = ImageChops.lighter(ImageChops.lighter(r,g),b)
+        mask = magnitude.point(lambda v: 0 if v < 18 else (255 if v > 52 else int((v-18)/34*255)))
+        mask = mask.filter(ImageFilter.GaussianBlur(radius=0.7))
+        item.putalpha(mask)
+        return item
+
+    @staticmethod
+    def _crop_alpha_subject(item: Image.Image, pad_ratio: float = 0.035) -> Image.Image:
+        item = item.convert("RGBA")
+        bbox = item.getchannel("A").getbbox()
+        if not bbox:
+            return item
+        left, top, right, bottom = bbox
+        bw, bh = max(1, right-left), max(1, bottom-top)
+        pad_x = max(1, int(bw * pad_ratio)); pad_y = max(1, int(bh * pad_ratio))
+        box = (max(0, left-pad_x), max(0, top-pad_y), min(item.width, right+pad_x), min(item.height, bottom+pad_y))
+        cropped = item.crop(box)
+        return cropped if cropped.width > 2 and cropped.height > 2 else item
+
+    @staticmethod
+    def _principal_axis_angle(item: Image.Image) -> float | None:
+        """Return major alpha-axis angle in degrees (0=horizontal, 90=vertical)."""
+        alpha = item.convert("RGBA").getchannel("A")
+        # Downsample for predictable CPU cost on serverless/browser-produced assets.
+        scale = min(1.0, 220.0 / max(1, max(alpha.size)))
+        if scale < 1.0:
+            alpha = alpha.resize((max(8, int(alpha.width*scale)), max(8, int(alpha.height*scale))), Image.Resampling.BILINEAR)
+        pts=[]
+        pix=alpha.load()
+        step=max(1, int(max(alpha.size)/180))
+        for y in range(0, alpha.height, step):
+            for x in range(0, alpha.width, step):
+                if pix[x,y] >= 48:
+                    pts.append((x,y))
+        if len(pts) < 20:
+            return None
+        mx=sum(x for x,_ in pts)/len(pts); my=sum(y for _,y in pts)/len(pts)
+        cxx=sum((x-mx)*(x-mx) for x,_ in pts)/len(pts)
+        cyy=sum((y-my)*(y-my) for _,y in pts)/len(pts)
+        cxy=sum((x-mx)*(y-my) for x,y in pts)/len(pts)
+        # Major eigenvector angle for 2x2 covariance matrix.
+        angle=0.5*math.degrees(math.atan2(2*cxy, cxx-cyy))
+        if angle < 0:
+            angle += 180.0
+        return angle
+
+    @classmethod
+    def _orient_subject(cls, item: Image.Image, orientation: str | None) -> tuple[Image.Image, float]:
+        wanted = normalize_text(str(orientation or '')).replace(' ', '_')
+        if wanted not in {'vertical','portrait','upright','em_pe','horizontal','landscape'}:
+            return cls._crop_alpha_subject(item), 0.0
+        item = cls._crop_alpha_subject(item)
+        angle = cls._principal_axis_angle(item)
+        if angle is None:
+            return item, 0.0
+        target = 90.0 if wanted in {'vertical','portrait','upright','em_pe'} else 0.0
+        # PIL rotation and image-coordinate PCA use opposite angular signs.
+        delta = angle - target
+        while delta > 90: delta -= 180
+        while delta < -90: delta += 180
+        if abs(delta) < 3.0:
+            return item, 0.0
+        rotated = item.rotate(delta, expand=True, resample=Image.Resampling.BICUBIC)
+        return cls._crop_alpha_subject(rotated), float(delta)
+
+    @staticmethod
+    def _simple_background(width: int, height: int, rules: Optional[dict[str, Any]] = None) -> Image.Image:
+        rules = rules or {}
+        brightness = normalize_text(str(rules.get('brightness') or 'light'))
+        # Deterministic plain background for object/quiz scenes. No decorative demo assets.
+        if brightness in {'dark','escuro','escura'}:
+            color=(34,39,48)
+        elif brightness in {'medium','medio','média','media'}:
+            color=(226,231,238)
+        else:
+            color=(248,249,251)
+        return Image.new('RGBA', (width,height), (*color,255))
+
+    @staticmethod
     def _fraction(value, default: float) -> float:
         if value is None:
             return default
@@ -389,23 +487,69 @@ class ComposerEngine:
         except Exception:
             return default
 
-    def _compose_object_only(self, plan: Plan, width: int, height: int, composition_rules: Optional[dict[str, Any]] = None) -> Image.Image:
-        bg = Image.open(self.bank.asset_path(plan.background)) if plan.background else Image.new("RGB", (512, 512), (245, 248, 252))
-        base = self._fit_background(bg, width, height)
+    def _compose_object_only(
+        self, plan: Plan, width: int, height: int,
+        composition_rules: Optional[dict[str, Any]] = None,
+        background_rules: Optional[dict[str, Any]] = None,
+        object_rules: Optional[dict[str, Any]] = None,
+        subject_rules: Optional[dict[str, Any]] = None,
+    ) -> Image.Image:
+        rules = composition_rules or {}
+        bg_rules = background_rules or {}
+        obj_rules = object_rules or {}
+        subj_rules = subject_rules or {}
+        if plan.background:
+            bg = Image.open(self.bank.asset_path(plan.background))
+            base = self._fit_background(bg, width, height)
+        else:
+            base = self._simple_background(width, height, bg_rules)
+
         if plan.object:
-            obj = Image.open(self.bank.asset_path(plan.object))
-            rules = composition_rules or {}
+            obj = Image.open(self.bank.asset_path(plan.object)).convert('RGBA')
+            obj = self._remove_uniform_background(obj)
+            orientation = (
+                obj_rules.get('orientation') or obj_rules.get('desired_orientation') or
+                subj_rules.get('orientation') or rules.get('subject_orientation') or
+                ('vertical' if normalize_text(str(obj_rules.get('desired_view') or obj_rules.get('view') or '')) in {'front','frontal'} else None)
+            )
+            obj, rotated_deg = self._orient_subject(obj, orientation)
+
             scale = self._fraction(rules.get('object_scale', rules.get('subject_scale')), 0.62)
             pos = rules.get('subject_position')
             cx = self._fraction(rules.get('object_x', rules.get('subject_x', pos)), 0.50)
             cy = self._fraction(rules.get('object_y', rules.get('subject_y', pos)), 0.50)
-            size = max(32, int(min(width, height) * scale))
-            x = int(width * cx - size / 2)
-            y = int(height * cy - size / 2)
-            sx = 512 / width
-            sy = 512 / height
-            box = [int(x * sx), int(y * sy), int(size * sx), int(size * sy)]
-            self._paste_box(base, obj, box, shadow=bool(rules.get('shadow', True)))
+            orient_norm = normalize_text(str(orientation or '')).replace(' ', '_')
+
+            # `subject_scale` applies to the subject's main axis, not the canvas short side.
+            if orient_norm in {'vertical','portrait','upright','em_pe'}:
+                target_h = max(32, int(height * min(scale, 0.86)))
+                target_w = max(32, int(width * 0.64))
+            elif orient_norm in {'horizontal','landscape'}:
+                target_w = max(32, int(width * min(scale, 0.86)))
+                target_h = max(32, int(height * 0.52))
+            else:
+                main = max(32, int(min(width,height) * scale))
+                target_w = target_h = main
+
+            # Fit the cropped/oriented subject itself into the requested safe area.
+            fit = min(target_w / max(1,obj.width), target_h / max(1,obj.height))
+            rw=max(1,int(obj.width*fit)); rh=max(1,int(obj.height*fit))
+            obj=obj.resize((rw,rh), Image.Resampling.LANCZOS)
+            x=int(width*cx-rw/2); y=int(height*cy-rh/2)
+            x=max(0,min(width-rw,x)); y=max(0,min(height-rh,y))
+
+            if bool(rules.get('shadow', True)):
+                alpha=obj.getchannel('A')
+                shadow=Image.new('RGBA', obj.size, (0,0,0,0))
+                sa=alpha.filter(ImageFilter.GaussianBlur(radius=max(1,int(min(obj.size)*0.02))))
+                shade=Image.new('RGBA',obj.size,(0,0,0,70)); shade.putalpha(sa.point(lambda v:int(v*0.28)))
+                base.alpha_composite(shade,(min(width-rw,x+5),min(height-rh,y+8)))
+            base.alpha_composite(obj,(x,y))
+            self.last_info.setdefault('composer_geometry', {})
+            self.last_info['composer_geometry'] = {
+                'orientation_requested': orientation, 'rotation_applied_deg': round(rotated_deg,2),
+                'subject_scale': scale, 'subject_box_px':[x,y,rw,rh], 'center':[cx,cy],
+            }
         return base
 
     def _compose_character_scene(self, plan: Plan, width: int, height: int) -> Image.Image:
@@ -507,7 +651,7 @@ class ComposerEngine:
             or str(scene.get('subject_type') or '').lower() in {'character', 'personagem', 'person'}
             or str(subject_block.get('type') or '').lower() in {'character', 'personagem', 'person'}
         )
-        background = self._guided_asset('background', bg_terms, default_id='bg_plain_light', allow_candidates=allow_candidates)
+        background = self._guided_asset('background', bg_terms, allow_candidates=allow_candidates) if bg_search_block else None
         pose = self._guided_asset('pose', pose_terms, default_id='pose_standing_center', allow_candidates=allow_candidates) if has_character else None
         face = self._guided_asset('face', face_terms, default_id='face_neutral', allow_candidates=allow_candidates) if has_character else None
         outfit = self._guided_asset('outfit', cloth_terms or char_terms, allow_candidates=allow_candidates) if has_character else None
@@ -521,6 +665,7 @@ class ComposerEngine:
         extra = {
             'scene': scene, 'composition_rules': comp, 'searches': searches, 'allow_candidates': allow_candidates,
             'lighting_request': light_block, 'background_request': bg_directive, 'style_request': first('STYLE') or {}, 'camera_request': camera_block,
+            'object_request': obj_block, 'subject_request': subject_block,
             'selected': {
                 'background': background.get('id') if background else None,
                 'pose': pose.get('id') if pose else None,
@@ -537,7 +682,10 @@ class ComposerEngine:
         if plan.mode == 'character_scene':
             image = self._compose_character_scene(plan, width, height)
         else:
-            image = self._compose_object_only(plan, width, height, extra.get('composition_rules'))
+            image = self._compose_object_only(
+                plan, width, height, extra.get('composition_rules'), extra.get('background_request'),
+                extra.get('object_request'), extra.get('subject_request')
+            )
         # Lightweight deterministic lighting harmonization from the guide.
         light = extra.get('lighting_request') or {}
         temp = normalize_text(str(light.get('temperature') or ''))
@@ -560,7 +708,8 @@ class ComposerEngine:
         elif contrast in {'high', 'alto', 'alta'}:
             rgb = ImageEnhance.Contrast(rgb).enhance(1.07)
         image = self._harmonize(rgb)
-        self.last_info = {'plan': plan.as_dict(), 'guided': extra, 'bank': self.bank.status(), 'refiner': 'off'}
+        geometry = dict(self.last_info.get('composer_geometry') or {})
+        self.last_info = {'plan': plan.as_dict(), 'guided': extra, 'bank': self.bank.status(), 'refiner': 'off', 'composer_geometry': geometry}
         for asset in [plan.background, plan.pose, plan.face, plan.outfit, plan.object]:
             if asset and asset.get('source') and asset.get('source') != 'demo_bank' and memory_manager.by_id.get(asset.get('id')):
                 memory_manager.mark_used(asset['id'])

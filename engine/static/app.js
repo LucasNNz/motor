@@ -179,6 +179,37 @@ function normalizeBatchText(text) {
   return value.trim();
 }
 
+function syncFriendlyFormatFromGuide(text) {
+  if (!simpleFormat || !singleWidth || !singleHeight || !text) return null;
+  const outputMatch = String(text).match(/\[OUTPUT\]([\s\S]*?)(?=\n\s*\[[^\]]+\]|$)/i);
+  if (!outputMatch) return null;
+  const block = outputMatch[1] || '';
+  const read = (key) => {
+    const m = block.match(new RegExp(`^\\s*${key}\\s*=\\s*(.+?)\\s*$`, 'im'));
+    return m ? m[1].trim() : '';
+  };
+  let w = Number(read('width') || 0);
+  let h = Number(read('height') || 0);
+  const ratio = String(read('aspect_ratio') || '').replace(/\s/g, '');
+  if ((!w || !h) && /^\d+(?:\.\d+)?:\d+(?:\.\d+)?$/.test(ratio)) {
+    const [rw, rh] = ratio.split(':').map(Number);
+    if (rw && rh) {
+      if (rh > rw) { h = 1280; w = Math.round(h * rw / rh); }
+      else if (rw > rh) { w = 1280; h = Math.round(w * rh / rw); }
+      else { w = h = 768; }
+    }
+  }
+  if (w && h) { singleWidth.value = String(w); singleHeight.value = String(h); }
+  if (w && h) {
+    const r = w / h;
+    simpleFormat.value = Math.abs(r - 1) < 0.08 ? 'square' : (r > 1 ? 'landscape' : 'portrait');
+    simpleFormat.dataset.guideControlled = 'true';
+    simpleFormat.title = `Formato definido pelo guia: ${w}×${h}`;
+    return { width: w, height: h, ratio };
+  }
+  return null;
+}
+
 function planSummary(composition) {
   const p = composition?.plan;
   if (!p) return '-';
@@ -924,7 +955,7 @@ async function runBrowserBatch(text) {
   batchSummary.textContent = `LOTE BROWSER · preparando refinador uma única vez para ${items.length} imagem(ns)...`;
   const prepared = await prepareBrowserRefiner();
   const manifest = {
-    version: '0.12.6',
+    version: '0.12.7',
     execution: 'browser_client',
     generated_at: new Date().toISOString(),
     model: browserModel.value || DEFAULT_MODEL,
@@ -1051,13 +1082,15 @@ if (productionGuideFile) {
     try {
       const text = await file.text();
       productionGuideText.value = normalizeBatchText(text);
+      const guideOutput = syncFriendlyFormatFromGuide(productionGuideText.value);
       const sections = (productionGuideText.value.match(/^\s*\[[^\]]+\]/gm) || []).length;
       const searchBlocks = (productionGuideText.value.match(/^\s*\[SEARCH_[^\]]+\]/gmi) || []).length;
       const fallbackLines = (productionGuideText.value.match(/^\s*(fallback_queries|query_fallbacks|query_fallback_\d+)\s*=/gmi) || []).length;
       const fallbackNote = searchBlocks && !fallbackLines
         ? ' · atenção: busca sem query de fallback'
         : (fallbackLines ? ` · ${fallbackLines} fallback(s) de busca` : '');
-      productionGuideInfo.textContent = `${file.name} · ${sections} bloco(s) de instrução${fallbackNote} · pronto para executar.`;
+      const outputNote = guideOutput ? ` · saída ${guideOutput.width}×${guideOutput.height} pelo guia` : '';
+      productionGuideInfo.textContent = `${file.name} · ${sections} bloco(s) de instrução${fallbackNote}${outputNote} · pronto para executar.`;
     } catch (err) {
       productionGuideInfo.textContent = `Erro ao ler guia: ${err.message}`;
     }
@@ -1309,7 +1342,7 @@ guidedReprocessBtn.addEventListener('click', reprocessGuidedRegion);
 Promise.all([refreshHealth(), refreshComposerStatus(false), refreshMemoryGallery(), refreshRefinerStatus(), refreshBrowserRuntime()]).then(toggleBackendFields);
 setInterval(refreshHealth, 10000);
 
-// V0.12.6 · busca resiliente · produção guiada
+// V0.12.7 · geometria guiada · produção guiada
 for (const button of document.querySelectorAll('.nav-btn')) {
   button.addEventListener('click', () => {
     const view = button.dataset.view || 'create';
