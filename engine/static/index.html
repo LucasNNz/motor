@@ -10,8 +10,8 @@
   <div class="app-shell">
     <header class="topbar">
       <div>
-        <h1>Corvo Image Engine <span class="version">V0.4 · COMPOSER</span></h1>
-        <p>Memória visual + composição automática · sem CUDA obrigatório · geração em lote por TXT.</p>
+        <h1>Corvo Image Engine <span class="version">V0.9 · REFERÊNCIAS + ANATOMIA</span></h1>
+        <p>Guia técnico + biblioteca auditável + condicionamento visual + anatomia opcional + operações reconstruíveis.</p>
       </div>
       <div class="top-status">
         <div id="healthBadge" class="badge">Conectando...</div>
@@ -23,7 +23,7 @@
       <div class="engine-head">
         <div>
           <h2>Composer Engine</h2>
-          <p class="muted">O MVP não cria todos os pixels do zero. Ele interpreta o prompt, procura componentes no banco visual e monta a composição.</p>
+          <p class="muted">Mantém o modo legado por prompt e adiciona execução determinística pelo guia técnico auxiliar.</p>
         </div>
         <div class="actions compact">
           <button id="refreshComposerBtn" class="ghost">Atualizar banco</button>
@@ -32,13 +32,13 @@
       </div>
       <div class="engine-status-grid">
         <div class="status-card"><span>Motor</span><strong class="ok">COMPOSER</strong></div>
-        <div class="status-card"><span>Assets</span><strong id="bankAssets">Verificando...</strong></div>
+        <div class="status-card"><span>Assets totais</span><strong id="bankAssets">Verificando...</strong></div>
         <div class="status-card"><span>Banco</span><strong id="bankBreakdown">-</strong></div>
         <div class="status-card"><span>Refinador</span><strong class="warn">DESLIGADO</strong></div>
       </div>
       <div id="composerMessage" class="meta"></div>
       <div class="setup-note">
-        <strong>Direção atual:</strong> o Composer funciona apenas com CPU/Pillow e banco local. Os backends generativos antigos continuam disponíveis como experimentais, mas não são o motor principal. O banco demo pode ser substituído gradualmente por PNGs reais com metadados de origem/licença.
+        <strong>Direção atual:</strong> o caminho novo é GUIA → BUSCA DIRIGIDA → BIBLIOTECA AUDITÁVEL → COMPOSIÇÃO → REFINADOR CONDICIONADO OPCIONAL → LOGS/ZIP. O modo por prompt continua disponível para compatibilidade.
       </div>
     </section>
 
@@ -75,8 +75,9 @@
             <input id="singleSteps" type="number" value="1" min="1" max="50" />
           </div>
         </div>
-        <div class="actions">
+        <div class="actions wrap">
           <button id="generateOneBtn">Compor imagem</button>
+          <button id="collectMissingBtn" class="ghost">Buscar faltantes do prompt</button>
         </div>
         <div id="singleMeta" class="meta"></div>
         <div id="singlePlan" class="plan-box empty">O plano de composição aparecerá aqui.</div>
@@ -93,7 +94,8 @@
           <div class="file-info" id="batchFileInfo">Ou cole os prompts abaixo.</div>
         </div>
         <label>Prompts — uma linha por item ou <code>ID|PROMPT</code></label>
-        <textarea id="batchText" rows="10" placeholder="001|UM GARFO CENTRALIZADO, FUNDO CLARO, SEM TEXTO\n002|UM MENINO NINJA SURPRESO APONTANDO PARA UMA CAIXA EM UMA FLORESTA"></textarea>
+        <textarea id="batchText" rows="10" placeholder="001|UM GARFO CENTRALIZADO, FUNDO CLARO, SEM TEXTO
+002|UM MENINO NINJA SURPRESO APONTANDO PARA UMA CAIXA EM UMA FLORESTA"></textarea>
         <div class="inline-fields batch-config">
           <div>
             <label>Backend</label>
@@ -139,12 +141,276 @@
       </section>
     </main>
 
+
+    <section class="panel guided-panel">
+      <div class="engine-head">
+        <div>
+          <h2>Execução Guiada por TXT</h2>
+          <p class="muted">O Engine não precisa interpretar o pedido: ele executa [SCENE], [SEARCH_*], [FILTER], [COMPOSITION], [RENDER] e correções [REPROCESS]/[FIX].</p>
+        </div>
+        <div id="guidedOperationBadge" class="badge">Nenhuma operação</div>
+      </div>
+      <div class="guided-grid">
+        <div class="collector-box">
+          <label>Pedido original</label>
+          <textarea id="guidedPrompt" rows="3">NINJA SENTADO EM UMA CADEIRA EM UMA ALDEIA.</textarea>
+          <label>Guia técnico auxiliar</label>
+          <textarea id="guidedGuide" rows="20">[SCENE]
+subject=ninja_jovem
+visual_reference=naruto
+action=sentado
+object=cadeira
+environment=aldeia
+camera=plano_medio
+composition=personagem_central
+style=2d_semirrealista
+
+[SEARCH_CHARACTER]
+reference_target=naruto
+query=ninja anime cabelo espetado roupa laranja
+collect_limit=40
+keep_limit=8
+
+[SEARCH_POSE]
+query=pessoa sentada em cadeira plano medio
+pose=sentado
+orientation=frontal
+camera=plano_medio
+collect_limit=30
+keep_limit=6
+
+[SEARCH_BACKGROUND]
+query=aldeia anime rua casas fim de tarde
+environment=aldeia
+collect_limit=30
+keep_limit=6
+
+[SEARCH_LIGHTING]
+query=personagem iluminacao quente fim de tarde
+temperature=warm
+collect_limit=20
+keep_limit=4
+
+[FILTER]
+min_resolution=768
+reject_text=true
+reject_logos=true
+reject_watermarks=true
+remove_duplicates=true
+remove_near_duplicates=true
+quality_threshold=0.30
+similarity_threshold=0.96
+
+[COMPOSITION]
+subject_x=50%
+subject_y=55%
+preserve_pose=true
+integrate_subject_with_chair=true
+match_perspective=true
+
+[RENDER]
+preserve_character_reference=high
+preserve_pose=high
+preserve_scene_structure=high
+redraw_connections=true
+harmonize_lighting=true
+harmonize_style=true
+fix_anatomy=true</textarea>
+          <div class="inline-fields collect-config two-row">
+            <div><label>Largura</label><input id="guidedWidth" type="number" value="768" min="256" step="64" /></div>
+            <div><label>Altura</label><input id="guidedHeight" type="number" value="768" min="256" step="64" /></div>
+            <div><label>Refinador</label><select id="guidedRefiner"><option value="none" selected>SEM REFINADOR</option><option value="light_cpu">LIGHT CPU</option><option value="sdcpp_img2img">SD.CPP IMG2IMG + REFERÊNCIAS</option></select></div>
+            <div><label>Steps IA</label><input id="guidedSteps" type="number" value="3" min="1" max="12" /></div>
+            <div><label>Força img2img</label><input id="guidedStrength" type="number" value="0.24" min="0.05" max="0.85" step="0.01" /></div>
+            <div><label>Buscar faltantes ao executar</label><select id="guidedCollectMissing"><option value="false" selected>NÃO</option><option value="true">SIM</option></select></div>
+          </div>
+          <div class="actions wrap">
+            <button id="guidedCollectBtn" class="ghost">Executar buscas do guia</button>
+            <button id="guidedRunBtn">Executar guia</button>
+            <a id="guidedExportLink" class="ghost disabled" href="#" download>Exportar operação</a>
+          </div>
+          <div id="guidedMeta" class="meta">O guia é o contrato de execução local.</div>
+        </div>
+        <div class="collector-box">
+          <div class="preview-box"><img id="guidedPreview" alt="Resultado guiado" /></div>
+          <div id="guidedPlan" class="plan-box empty">A seleção de referências e os tempos aparecerão aqui.</div>
+          <div class="setup-note small-note">
+            <strong>Avaliação da operação</strong>
+            <div class="inline-fields collect-config two-row">
+              <div><label>Tipo de erro</label><input id="guidedErrorType" type="text" placeholder="pose, iluminação, refinador..." /></div>
+              <div><label>Severidade</label><select id="guidedSeverity"><option value="">-</option><option value="baixa">BAIXA</option><option value="media">MÉDIA</option><option value="alta">ALTA</option></select></div>
+            </div>
+            <label>Problema / observação</label><textarea id="guidedProblem" rows="3" placeholder="Ex.: mão direita ficou ruim; preservar o restante."></textarea>
+            <div class="actions wrap">
+              <button id="guidedApproveBtn" class="ghost">Aprovar resultado</button>
+              <button id="guidedRejectBtn" class="ghost">Reprovar resultado</button>
+              <button id="guidedSaveEvalBtn" class="ghost">Salvar anotação</button>
+            </div>
+            <div class="reprocess-box">
+              <strong>Reprocessamento direcionado · anatomia automática quando disponível</strong>
+              <p class="muted">Cria uma operação filha e corrige apenas a região indicada em [FIX], preservando o restante.</p>
+              <textarea id="guidedFixGuide" rows="10">[REPROCESS]
+reuse_previous_scene=true
+preserve_character=true
+preserve_pose=true
+preserve_background=true
+preserve_lighting=true
+
+[FIX]
+region=right_hand
+action=redraw
+problem=mao direita precisa ser corrigida
+margin=0.28
+feather=0.10</textarea>
+              <div class="actions wrap">
+                <button id="guidedReprocessBtn" class="ghost">Reprocessar região</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+
+    <section class="panel refiner-panel">
+      <div class="engine-head">
+        <div>
+          <h2>Benchmark do Refinador</h2>
+          <p class="muted">Teste de viabilidade: composição pronta → refinamento → PNG. Mede principalmente o tempo do estágio mais pesado.</p>
+        </div>
+        <div id="refinerStatusBadge" class="badge">Verificando refinador...</div>
+      </div>
+      <div class="refiner-controls">
+        <div>
+          <label>Resolução</label>
+          <select id="refinerSize">
+            <option value="512" selected>512 × 512</option>
+            <option value="768">768 × 768</option>
+          </select>
+        </div>
+        <div>
+          <label>Steps IA</label>
+          <input id="refinerSteps" type="number" value="3" min="1" max="12" />
+        </div>
+        <div>
+          <label>Força img2img</label>
+          <input id="refinerStrength" type="number" value="0.24" min="0.05" max="0.85" step="0.01" />
+        </div>
+        <div class="refiner-button-box">
+          <label>Baseline</label>
+          <button id="benchmarkLightBtn" class="ghost">Testar refino leve</button>
+        </div>
+        <div class="refiner-button-box">
+          <label>Teste decisivo</label>
+          <button id="benchmarkAiBtn">Testar IA · SD.CPP</button>
+        </div>
+      </div>
+      <label>Prompts do benchmark — um por linha</label>
+      <textarea id="benchmarkPrompts" rows="6">UM GARFO COMO ELEMENTO PRINCIPAL, CENTRALIZADO, FUNDO CLARO E SIMPLES, ILUSTRAÇÃO 2D SEMIRREALISTA LIMPA, SEM TEXTO, SEM LOGOS.
+UMA MAÇÃ VERMELHA CENTRALIZADA, BEM DESTACADA, FUNDO CLARO, ILUSTRAÇÃO 2D SEMIRREALISTA LIMPA, SEM TEXTO.
+UM MENINO NINJA SURPRESO APONTANDO PARA UMA CAIXA EM UMA FLORESTA, ILUSTRAÇÃO 2D SEMIRREALISTA LIMPA, SEM TEXTO.
+UMA BOLA DE FUTEBOL EM UM CAMPO, ELEMENTO PRINCIPAL BEM DESTACADO, ILUSTRAÇÃO 2D LIMPA, SEM TEXTO.
+UM CACHORRO FELIZ EM UM PARQUE, COMPOSIÇÃO LIMPA PARA QUIZ, ILUSTRAÇÃO 2D SEMIRREALISTA, SEM TEXTO.</textarea>
+      <div class="actions wrap">
+        <button id="cancelBenchmarkBtn" class="ghost">Cancelar benchmark</button>
+        <button id="refreshRefinerBtn" class="ghost">Atualizar status</button>
+      </div>
+      <div id="benchmarkMeta" class="meta">O teste IA precisa do stable-diffusion.cpp + modelo instalados. Use INSTALAR_VULKAN.bat primeiro; se não funcionar, INSTALAR_CPU.bat.</div>
+      <div id="benchmarkVerdict" class="benchmark-verdict empty">Nenhum benchmark executado.</div>
+      <div class="queue-table-wrap benchmark-table-wrap">
+        <table class="queue-table">
+          <thead><tr><th>#</th><th>Status</th><th>Composer</th><th>Refinador</th><th>Total</th><th>RAM motor</th><th>Antes / Depois</th></tr></thead>
+          <tbody id="benchmarkBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel collect-panel">
+      <div class="engine-head">
+        <div>
+          <h2>Coleta + Biblioteca Visual Auditável</h2>
+          <p class="muted">As referências ficam em pasta física, com candidates / approved / rejected, origem, query, uso e histórico de sucesso.</p>
+        </div>
+      </div>
+      <div class="collector-grid">
+        <div class="collector-box">
+          <label>Consulta manual</label>
+          <textarea id="collectQuery" rows="3" placeholder="Ex.: garfo cartoon, forest background, ninja outfit">garfo cartoon</textarea>
+          <div class="inline-fields collect-config two-row">
+            <div>
+              <label>Tipo</label>
+              <select id="collectType">
+                <option value="object" selected>OBJETO</option>
+                <option value="background">FUNDO</option>
+                <option value="pose">POSE</option>
+                <option value="face">ROSTO/EXPRESSÃO</option>
+                <option value="outfit">ROUPA</option>
+                <option value="character">PERSONAGEM</option>
+                <option value="other">OUTRO</option>
+              </select>
+            </div>
+            <div>
+              <label>Salvar top N</label>
+              <input id="collectSaveLimit" type="number" value="5" min="1" max="20" />
+            </div>
+            <div>
+              <label>Por fonte</label>
+              <input id="collectPerProvider" type="number" value="8" min="1" max="30" />
+            </div>
+            <div>
+              <label>Aprovar automaticamente</label>
+              <select id="collectAutoApprove">
+                <option value="false" selected>NÃO</option>
+                <option value="true">SIM</option>
+              </select>
+            </div>
+          </div>
+          <div class="actions wrap">
+            <button id="collectBtn">Coletar agora</button>
+            <button id="refreshMemoryBtn" class="ghost">Atualizar memória</button>
+          </div>
+          <div id="collectMeta" class="meta"></div>
+          <div id="collectSummary" class="setup-note small-note">Os resultados do coletor aparecerão aqui.</div>
+        </div>
+        <div class="collector-box">
+          <div class="memory-head">
+            <div>
+              <label>Filtrar memória</label>
+              <div class="memory-filters">
+                <select id="memoryTypeFilter">
+                  <option value="">TODOS</option>
+                  <option value="object">OBJETO</option>
+                  <option value="background">FUNDO</option>
+                  <option value="pose">POSE</option>
+                  <option value="face">ROSTO</option>
+                  <option value="outfit">ROUPA</option>
+                  <option value="character">PERSONAGEM</option>
+                  <option value="lighting">ILUMINAÇÃO</option>
+                  <option value="camera">CÂMERA</option>
+                  <option value="weather">CLIMA</option>
+                  <option value="texture">TEXTURA</option>
+                  <option value="style">ESTILO</option>
+                  <option value="composition">COMPOSIÇÃO</option>
+                </select>
+                <select id="memoryStateFilter"><option value="">TODOS ESTADOS</option><option value="candidates">CANDIDATES</option><option value="approved">APPROVED</option><option value="rejected">REJECTED</option></select>
+                <input id="memoryQueryFilter" type="text" placeholder="Buscar por conceito/tag" />
+                <button id="memorySearchBtn" class="ghost">Buscar</button>
+              </div>
+            </div>
+            <div id="memoryStatusMini" class="file-info"></div>
+          </div>
+          <div id="memoryGallery" class="memory-gallery"></div>
+        </div>
+      </div>
+    </section>
+
     <section class="panel experimental-panel">
-      <h2>Próximas camadas</h2>
+      <h2>Arquitetura V0.9</h2>
       <div class="roadmap-grid">
-        <div><strong>MVP 1 · AGORA</strong><span>Banco manual + interpretação + composição + PNG.</span></div>
-        <div><strong>MVP 2</strong><span>Coleta automática com origem/licença + deduplicação + classificação.</span></div>
-        <div><strong>MVP 3</strong><span>Refinador leve sem CUDA para bordas, iluminação e unificação de estilo.</span></div>
+        <div><strong>GUIA</strong><span>Define buscas, filtros, composição, preservação e refinamento.</span></div>
+        <div><strong>BIBLIOTECA</strong><span>Física, visível, editável e auditável; sem cache oculto como fonte principal.</span></div>
+        <div><strong>OPERAÇÃO</strong><span>Resultado + referências + etapas + tempos + erros + avaliação em ZIP reconstruível.</span></div>
+        <div><strong>REPROCESSAR</strong><span>[FIX] cria uma operação filha e altera somente a região mascarada.</span></div>
       </div>
     </section>
   </div>

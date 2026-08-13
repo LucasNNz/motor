@@ -1,0 +1,2 @@
+# Opcional — apenas para localizar partes do corpo e gerar pose-control.
+mediapipe>=0.10.14

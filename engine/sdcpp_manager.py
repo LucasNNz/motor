@@ -7,7 +7,7 @@ import threading
 import time
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 
 import requests
 
@@ -54,15 +54,88 @@ class StableDiffusionCppManager:
                 return candidate
         return None
 
+    @staticmethod
+    def _is_auxiliary_model(path: Path) -> bool:
+        name = path.name.lower().replace('-', '_')
+        tokens = (
+            'controlnet', 'control_net', 'openpose', 'ip_adapter',
+            'clip_vision', 'pose_landmarker', 'adetailer',
+        )
+        return any(token in name for token in tokens)
+
     def _detect_model(self) -> Optional[Path]:
         preferred = MODELS_DIR / "sd_turbo.safetensors"
         if preferred.exists():
             return preferred
         for pattern in ("*.safetensors", "*.gguf", "*.ckpt"):
-            matches = sorted(MODELS_DIR.glob(pattern))
+            matches = [p for p in sorted(MODELS_DIR.glob(pattern)) if not self._is_auxiliary_model(p)]
             if matches:
                 return matches[0]
         return None
+
+    @staticmethod
+    def _model_family(model: Optional[Path]) -> str:
+        if not model:
+            return 'none'
+        name = model.stem.lower().replace('-', '_').replace('.', '_')
+        if 'sdxl' in name or 'xl_base' in name or 'sd_xl' in name:
+            return 'sdxl'
+        sd15_tokens = ('sd15', 'sd_15', 'sd1_5', 'v1_5', '1_5_pruned', 'stable_diffusion_v1_5')
+        if any(token in name for token in sd15_tokens):
+            return 'sd15'
+        if 'sd_turbo' in name and 'sdxl' not in name:
+            return 'sd_turbo_baseline'
+        return 'unknown'
+
+    def _conditioning_compatibility(self, model: Optional[Path], aux: dict[str, Optional[str]]) -> dict[str, Any]:
+        family = self._model_family(model)
+        forced = os.environ.get('CORVO_FORCE_AUX_MODELS', '').strip().lower() in {'1', 'true', 'yes', 'sim'}
+        control_ok = bool(aux.get('controlnet') and (family == 'sd15' or forced))
+        ip_ok = bool(aux.get('ip_adapter') and aux.get('clip_vision') and (family in {'sd15', 'sdxl'} or forced))
+        reasons: list[str] = []
+        if aux.get('controlnet') and not control_ok:
+            reasons.append(f'ControlNet detectado, mas não carregado automaticamente para família {family}.')
+        if (aux.get('ip_adapter') or aux.get('clip_vision')) and not ip_ok:
+            if not (aux.get('ip_adapter') and aux.get('clip_vision')):
+                reasons.append('IP-Adapter exige os dois arquivos: IP-Adapter + CLIP Vision.')
+            else:
+                reasons.append(f'IP-Adapter detectado, mas não carregado automaticamente para família {family}.')
+        if family == 'unknown' and (aux.get('controlnet') or aux.get('ip_adapter')) and not forced:
+            reasons.append('Modelo principal desconhecido: use nome reconhecível ou CORVO_FORCE_AUX_MODELS=1 após validar compatibilidade.')
+        return {
+            'model_family': family,
+            'forced': forced,
+            'controlnet_loadable': control_ok,
+            'ip_adapter_loadable': ip_ok,
+            'reasons': reasons,
+        }
+
+    def _detect_aux_models(self) -> dict[str, Optional[str]]:
+        def first(patterns: tuple[str, ...]) -> Optional[Path]:
+            for pattern in patterns:
+                matches = sorted(MODELS_DIR.glob(pattern))
+                if matches:
+                    return matches[0]
+            return None
+
+        control = first(("controlnet*.safetensors", "control_net*.safetensors", "control*.safetensors", "openpose*.safetensors", "control*.pth"))
+        ip_adapter = first(("ip_adapter*.safetensors", "ip-adapter*.safetensors", "ip_adapter*.bin", "ip-adapter*.bin"))
+        clip_vision = first(("clip_vision*.safetensors", "clip-vision*.safetensors", "clip_vision*.bin", "clip-vision*.bin"))
+        return {
+            "controlnet": str(control.resolve()) if control else None,
+            "ip_adapter": str(ip_adapter.resolve()) if ip_adapter else None,
+            "clip_vision": str(clip_vision.resolve()) if clip_vision else None,
+        }
+
+    def capabilities(self, timeout: float = 0.8) -> dict[str, Any]:
+        try:
+            response = requests.get(f"{self.base_url}/sdcpp/v1/capabilities", timeout=timeout)
+            if response.ok:
+                data = response.json()
+                return {"available": True, "data": data, "error": None}
+            return {"available": False, "data": {}, "error": f"HTTP {response.status_code}"}
+        except Exception as exc:
+            return {"available": False, "data": {}, "error": str(exc)}
 
     def _detect_mode(self) -> str:
         marker = RUNTIME_DIR / "engine_mode.txt"
@@ -99,12 +172,16 @@ class StableDiffusionCppManager:
         self.state.mode = self._detect_mode()
         self.probe(timeout=0.35)
         data = asdict(self.state)
+        aux = self._detect_aux_models()
         data.update({
             "engine_installed": exe is not None,
             "model_installed": model is not None,
             "base_url": self.base_url,
             "runtime_dir": str(RUNTIME_DIR),
             "models_dir": str(MODELS_DIR),
+            "conditioning_models": aux,
+            "conditioning_compatibility": self._conditioning_compatibility(model, aux),
+            "native_capabilities": self.capabilities(timeout=0.35) if self.state.ready else {"available": False, "data": {}, "error": "engine_not_ready"},
         })
         return data
 
@@ -143,6 +220,15 @@ class StableDiffusionCppManager:
                 "--steps", "1",
                 "--cfg-scale", "0.0",
             ]
+            # Optional reference-conditioning weights. They are only passed when
+            # the user placed compatible files in models/, so older V0.8 setups
+            # keep the exact same startup command.
+            aux = self._detect_aux_models()
+            compat = self._conditioning_compatibility(model, aux)
+            if compat.get("controlnet_loadable"):
+                command.extend(["--control-net", aux["controlnet"]])
+            if compat.get("ip_adapter_loadable"):
+                command.extend(["--clip_vision", aux["clip_vision"], "--ip-adapter", aux["ip_adapter"]])
 
             creationflags = 0
             if os.name == "nt":

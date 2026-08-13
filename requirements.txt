@@ -2,7 +2,8 @@ fastapi>=0.111.0
 uvicorn>=0.30.0
 pillow>=10.4.0
 requests>=2.32.0
-# Optional for the embedded real local-model backend:
+psutil>=6.0.0
+# Optional for the embedded Python diffusion backend:
 # torch
 # diffusers
 # transformers

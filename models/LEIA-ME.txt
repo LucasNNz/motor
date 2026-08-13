@@ -4,3 +4,8 @@ O setup padrão baixa:
   sd_turbo.safetensors
 
 O arquivo é grande (~5,2 GB) e não vem dentro do ZIP do projeto.
+
+
+V0.9 — OPCIONAIS:
+  pose_landmarker.task        -> INSTALAR_ANATOMIA.bat
+  ControlNet/IP-Adapter/CLIP -> veja CONDICIONAMENTO_VISUAL.txt

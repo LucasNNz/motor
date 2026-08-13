@@ -1,0 +1,16 @@
+CORVO_LIBRARY — BIBLIOTECA VISUAL FÍSICA E AUDITÁVEL
+
+Esta pasta é a memória visual persistente principal para referências coletadas na V0.9.
+
+Categorias ficam em pastas como:
+CHARACTERS, POSES, FACES, EXPRESSIONS, CLOTHES, BACKGROUNDS, OBJECTS, LIGHTING, CAMERA, WEATHER, TEXTURES, STYLES e COMPOSITIONS.
+
+Dentro de cada conceito, o Engine cria:
+candidates/
+approved/
+rejected/
+search_history.json
+
+Cada imagem possui um arquivo JSON lateral com origem, URL, query, licença, scores, estado, uso, preferência, bloqueio e taxa histórica de sucesso.
+
+O diretório visual_memory/ foi mantido apenas para migração/compatibilidade com pacotes V0.6 antigos.

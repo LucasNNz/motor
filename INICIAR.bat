@@ -1,13 +1,13 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-title Corvo Image Engine V0.4 - Composer
+title Corvo Image Engine V0.9 - Referencias + Anatomia
 
 echo ==============================================
-echo      CORVO IMAGE ENGINE V0.4 - COMPOSER
+echo      CORVO IMAGE ENGINE V0.9 - REFERENCIAS + ANATOMIA
 echo ==============================================
 echo.
-echo Motor principal: memoria visual + composicao.
+echo Motor principal: memoria visual + composicao + condicionamento por referencias.
 echo CUDA nao e necessario para este MVP.
 echo.
 
@@ -30,8 +30,8 @@ if not exist ".venv\Scripts\python.exe" (
 
 set PY=.venv\Scripts\python.exe
 
-if not exist ".venv\.deps_ok_v04" (
-  echo Instalando dependencias leves do Composer Engine...
+if not exist ".venv\.deps_ok_v09" (
+  echo Instalando dependencias do Composer + Collector + Benchmark...
   "%PY%" -m pip install --upgrade pip
   "%PY%" -m pip install -r requirements.txt
   if errorlevel 1 (
@@ -39,7 +39,7 @@ if not exist ".venv\.deps_ok_v04" (
     pause
     exit /b 1
   )
-  echo ok> .venv\.deps_ok_v04
+  echo ok> .venv\.deps_ok_v09
 )
 
 if not exist "visual_bank\metadata.json" (

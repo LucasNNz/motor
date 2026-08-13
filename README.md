@@ -1,316 +1,296 @@
-# Corvo Image Engine V0.4 — Composer Engine
+# Corvo Image Engine V0.9 — Referências + Anatomia
 
-Esta versão muda a direção do projeto. O motor principal **não é mais um gerador diffusion pesado**.
+> **V0.9 preserva a V0.8 e conecta a biblioteca visual ao refinador de forma auditável: identidade/pose podem virar condicionamento visual real quando o runtime suporta, e o reprocessamento pode usar anatomia opcional por Pose Landmarker.**
 
-O MVP agora testa a hipótese:
+Arquitetura experimental atual:
 
 ```text
-PROMPT
+PEDIDO + GUIA AUXILIAR
   ↓
-INTERPRETAÇÃO
+BUSCAS DIRIGIDAS + CORVO_LIBRARY
   ↓
-MEMÓRIA / BANCO VISUAL
+COMPOSER GUIADO
   ↓
-SELEÇÃO DE COMPONENTES
+REFERENCE CONDITIONING BUNDLE
+  ├─ identidade
+  ├─ pose
+  ├─ pose-control opcional
+  └─ referências extras
   ↓
-COMPOSIÇÃO AUTOMÁTICA
+REFINADOR
+  ├─ API NATIVA SD.CPP quando capabilities permitem
+  └─ IMG2IMG V0.8 como fallback
   ↓
-HARMONIZAÇÃO LEVE
+PNG + REFERÊNCIAS + LOGS + AVALIAÇÃO + ZIP
   ↓
-PNG
+[REPROCESS]/[FIX] → anatomia/âncoras/heurística → OPERAÇÃO FILHA
 ```
 
-Não exige CUDA.
+Arquivos de direção: `DIRECAO_V07_GUIA_BIBLIOTECA_AUDITORIA.md`, `DIRECAO_V08_REPROCESSAMENTO_DIRECIONADO.md` e `DIRECAO_V09_REFERENCIAS_ANATOMIA.md`.
+
+## Novidades V0.9
+
+- `engine/reference_conditioning.py`: transforma referências selecionadas em identidade, pose, pose-control e refs extras.
+- `engine/anatomy_locator.py`: MediaPipe Pose Landmarker opcional; sem ele, o sistema usa os fallbacks da V0.8.
+- `stable-diffusion.cpp` consultado por `/sdcpp/v1/capabilities`; o Engine só registra condicionamento como aplicado quando a capability correspondente foi realmente usada.
+- suporte nativo opcional a `ip_adapter_image`, `control_image` e `ref_images`, mantendo identidade como IP-Adapter explícito.
+- pesos auxiliares não podem mais ser confundidos com o modelo principal.
+- carregamento automático conservador por família do modelo.
+- `logs/condicionamento.json` por operação.
+- painel mostra `POSE PRONTA/FALLBACK` e capabilities de referências.
+
+## Anatomia opcional no Windows
+
+Primeiro execute `INICIAR.bat` uma vez para criar `.venv`. Depois:
+
+```text
+INSTALAR_ANATOMIA.bat
+```
+
+Ele instala `mediapipe` e baixa `models/pose_landmarker.task`. Se não quiser instalar, nada quebra: o Engine continua usando âncoras e heurísticas.
+
+## Condicionamento visual real
+
+O setup padrão continua sendo o baseline com `sd_turbo.safetensors`. IP-Adapter/ControlNet **não são baixados automaticamente**. Coloque pesos compatíveis em `models/` e consulte `models/CONDICIONAMENTO_VISUAL.txt`. O Engine bloqueia carregamento automático quando não consegue inferir compatibilidade, em vez de fingir que o condicionamento foi aplicado.
 
 ---
 
-## Objetivo do MVP 1
 
-Responder uma pergunta:
+## O que entrou na V0.6
 
-> A composição automática com memória visual consegue produzir imagens úteis para quiz sem precisar gerar todos os pixels do zero?
+### Benchmark dedicado do refinador
+A interface possui agora a seção:
 
-Nesta fase **não há coleta automática nem refinamento generativo pesado**.
+```text
+BENCHMARK DO REFINADOR
+```
+
+Ela executa uma sequência de imagens e mede separadamente:
+
+- tempo para carregar/iniciar o motor;
+- tempo do Composer;
+- tempo do refinador;
+- tempo total por imagem;
+- primeira imagem;
+- média das imagens seguintes com o motor já carregado;
+- mínimo / máximo;
+- RAM do processo do motor quando disponível;
+- antes/depois de cada teste.
+
+O benchmark já compara a média aquecida com a referência operacional atual do Flow (~32 s por imagem considerando geração + margem de segurança).
 
 ---
 
-# Teste rápido no Windows
+## Dois refinadores para comparação
 
-1. Extraia o ZIP.
-2. Execute:
+### 1. `LIGHT CPU`
+
+Não é generativo.
+
+Serve apenas como baseline de velocidade para sabermos quanto custa uma harmonização leve com Pillow/CPU.
+
+### 2. `SD.CPP IMG2IMG`
+
+É o teste decisivo.
+
+Usa `stable-diffusion.cpp` e envia a composição pronta para:
+
+```text
+POST /sdapi/v1/img2img
+```
+
+com:
+
+- imagem inicial;
+- prompt original;
+- `denoising_strength` baixo;
+- poucos steps;
+- saída PNG.
+
+O objetivo é preservar a estrutura da composição e pedir ao modelo apenas a unificação/refinamento.
+
+---
+
+# Como testar no Windows
+
+## PASSO 1 — extrair o ZIP
+
+Extraia toda a pasta antes de executar.
+
+## PASSO 2 — instalar o refinador Vulkan
+
+Como os PCs não possuem CUDA, tente primeiro:
+
+```text
+INSTALAR_VULKAN.bat
+```
+
+Esse script:
+
+1. baixa o build Windows/Vulkan mais recente do `stable-diffusion.cpp`;
+2. instala o `sd-server` local;
+3. baixa o modelo SD-Turbo na pasta `models/`.
+
+O download do modelo é grande e acontece uma vez.
+
+### Se Vulkan não funcionar
+
+Execute:
+
+```text
+INSTALAR_CPU.bat
+```
+
+O modo CPU tende a ser mais lento, mas é importante como fallback de benchmark.
+
+---
+
+## PASSO 3 — iniciar o Corvo Image Engine
+
+Execute:
 
 ```text
 INICIAR.bat
 ```
 
-3. No primeiro uso, o programa cria um ambiente Python e instala apenas dependências leves:
-
-- FastAPI
-- Uvicorn
-- Pillow
-- Requests
-
-4. O navegador abre em:
+Abra, se necessário:
 
 ```text
 http://127.0.0.1:8011
 ```
 
-5. Deixe o backend em:
-
-```text
-COMPOSER ENGINE
-```
-
-6. Clique em **Compor imagem**.
-
-Não é necessário baixar modelo de vários GB para testar o Composer.
-
 ---
 
-# Banco visual inicial
+# Benchmark recomendado
 
-A pasta:
+Na seção **Benchmark do Refinador**:
 
-```text
-visual_bank/
-```
-
-contém um banco demo criado proceduralmente pelo próprio MVP.
-
-Atualmente possui:
-
-- 10 fundos;
-- 3 poses;
-- 4 rostos/expressões;
-- 9 combinações de roupas/poses;
-- 10 objetos.
-
-Total inicial: **36 assets**.
-
-Os componentes possuem metadados em:
+### Primeiro
+Clique:
 
 ```text
-visual_bank/metadata.json
+TESTAR REFINO LEVE
 ```
 
-O banco demo existe para validar a arquitetura, não para definir a qualidade visual final.
+Isso confirma que toda a infraestrutura do benchmark funciona.
 
----
-
-# Exemplos já entendidos pelo MVP
-
-## Objeto simples
+### Depois
+Clique:
 
 ```text
-UM GARFO CENTRALIZADO, BEM DESTACADO, FUNDO CLARO, SEM TEXTO
+TESTAR IA · SD.CPP
 ```
 
-Interpretação esperada:
+Configuração inicial recomendada:
 
 ```text
-MODO: object_only
-FUNDO: bg_plain_light
-OBJETO: obj_fork
-```
-
-## Cena composta
-
-```text
-UM MENINO NINJA SURPRESO APONTANDO PARA UMA CAIXA EM UMA FLORESTA
-```
-
-Interpretação esperada:
-
-```text
-FUNDO: bg_forest_day
-POSE: pose_pointing_right
-ROSTO: face_surprised
-ROUPA: outfit_ninja_pointing_right
-OBJETO: obj_box
-```
-
-A interface mostra esse plano antes/ao lado do resultado para facilitar o diagnóstico.
-
----
-
-# Lote por TXT
-
-Formato simples:
-
-```txt
-UM GARFO CENTRALIZADO, FUNDO CLARO, SEM TEXTO
-UMA MAÇÃ CENTRALIZADA, FUNDO CLARO, SEM TEXTO
-```
-
-Ou com IDs:
-
-```txt
-001|UM GARFO CENTRALIZADO, FUNDO CLARO, SEM TEXTO
-002|UMA MAÇÃ CENTRALIZADA, FUNDO CLARO, SEM TEXTO
-```
-
-O motor cria:
-
-```text
-001.png
-002.png
-manifest.json
-```
-
-E ao final disponibiliza o ZIP do lote.
-
----
-
-# Como o Composer escolhe componentes
-
-O MVP usa um interpretador local por palavras-chave/tags.
-
-Ele tenta identificar:
-
-- cenário/fundo;
-- objeto principal;
-- presença de personagem;
-- pose;
-- expressão;
-- roupa;
-- estilo básico.
-
-Cada asset do banco possui tags. O motor calcula correspondência entre prompt e tags e seleciona o item mais adequado.
-
-Esse interpretador é propositalmente simples nesta primeira prova de conceito. Futuramente pode ser substituído por um classificador/LLM local leve sem alterar a arquitetura do banco.
-
----
-
-# Composição
-
-O Composer usa:
-
-- camadas RGBA;
-- âncoras de cabeça/objeto;
-- compatibilidade roupa ↔ pose;
-- redimensionamento automático;
-- sombras leves;
-- harmonização não generativa de cor/contraste/nitidez.
-
-A composição final é feita com Pillow/CPU.
-
----
-
-# Direitos e licenças
-
-Os assets demo desta versão são gerados proceduralmente pelo próprio MVP.
-
-Ao adicionar referências externas, registrar quando aplicável:
-
-- origem;
-- URL;
-- autor;
-- licença;
-- URL da licença;
-- data de coleta;
-- observações.
-
-Um motor local não elimina obrigações de copyright/licença.
-
----
-
-# Backends experimentais mantidos
-
-A arquitetura antiga continua disponível para comparação:
-
-- `SD.CPP · EXPERIMENTAL`
-- `DIFFUSERS CPU · EXPERIMENTAL`
-- `AUTOMATIC1111`
-- `MOCK`
-
-Eles **não são mais o caminho principal**.
-
-Os scripts `INSTALAR_VULKAN.bat` e `INSTALAR_CPU.bat` permanecem no pacote apenas para experimentos futuros com refinamento generativo.
-
----
-
-# Próximas fases
-
-## MVP 1 — atual
-
-```text
-banco manual
-→ interpretação
-→ busca
-→ composição
-→ PNG
-```
-
-## MVP 2 — coleta automática
-
-```text
-conceito ausente
-→ busca em fonte adequada
-→ download
-→ validação
-→ deduplicação
-→ registro de origem/licença
-→ classificação
-→ banco
-```
-
-## MVP 3 — refinador
-
-Adicionar uma etapa pequena para:
-
-- bordas;
-- iluminação;
-- cores;
-- roupa/corpo;
-- preenchimento;
-- unificação de estilo.
-
-Priorizar CPU / ONNX Runtime / DirectML / OpenVINO / outras opções sem CUDA.
-
----
-
-# Estrutura principal
-
-```text
-image_motor_mvp/
-  INICIAR.bat
-  engine/
-    backend.py
-    composer_engine.py
-    seed_visual_bank.py
-    models.py
-    server.py
-    utils.py
-    static/
-  visual_bank/
-    metadata.json
-    LEIA-ME.txt
-    assets/
-      backgrounds/
-      poses/
-      faces/
-      outfits/
-      objects/
-  outputs/
-  sample_prompts.txt
-  requirements.txt
+512 × 512
+3 steps
+força img2img: 0.24
+5 prompts
 ```
 
 ---
 
-# O que medir
+# Como interpretar
 
-No teste, medir principalmente:
+O programa gera um veredito automático usando a média das imagens após a primeira:
 
-- tempo por imagem;
-- tempo para lote de 10;
-- RAM;
-- CPU;
-- qualidade;
-- legibilidade para quiz;
-- consistência;
-- sensação de colagem;
-- porcentagem de prompts atendidos pelo banco;
-- quais categorias precisam de mais assets;
-- quanto refinamento seria realmente necessário.
+```text
+≤ 10 s     → EXCELENTE
+≤ 20 s     → MUITO PROMISSOR
+≤ 30 s     → VIÁVEL PARA TESTE
+≤ 45 s     → LIMÍTROFE
+> 45 s     → LENTO DEMAIS PARA O FLUXO ATUAL
+```
+
+A **primeira imagem não é o principal número**, porque ela pode sofrer efeitos de aquecimento/cache mesmo depois de o modelo estar carregado.
+
+O campo mais importante é:
+
+```text
+MÉDIA AQUECIDA
+```
+
+---
+
+# Antes / Depois
+
+Cada linha do benchmark cria:
+
+```text
+01_before.png
+01_after.png
+02_before.png
+02_after.png
+...
+```
+
+Na tabela existem links `ANTES` e `DEPOIS` para comparar visualmente se o ganho de qualidade justifica o custo de tempo.
+
+Os resultados completos ficam em:
+
+```text
+outputs/refiner_benchmarks/<job_id>/
+```
+
+incluindo:
+
+```text
+benchmark.json
+```
+
+---
+
+# O restante do projeto continua disponível
+
+A V0.6 preserva:
+
+- Composer Engine;
+- banco demo;
+- memória visual persistente;
+- coletor Openverse;
+- coletor Wikimedia Commons;
+- filtro e deduplicação;
+- lote por TXT;
+- ZIP final;
+- aprovação de assets da memória.
+
+Mas, nesta versão, **o benchmark do refinador é a prioridade**.
+
+---
+
+# O que decidir depois do teste
+
+## Se o refinador for rápido
+
+Continuar com:
+
+```text
+MEMÓRIA VISUAL
+→ COLETA MELHOR
+→ COMPOSER MAIS INTELIGENTE
+→ REFINADOR
+→ LOTE
+```
+
+## Se for lento demais
+
+Não investir tempo demais no refinador atual.
+
+Testar alternativas como:
+
+- outro modelo menor;
+- quantização;
+- outro backend sem CUDA;
+- DirectML;
+- ONNX Runtime;
+- OpenVINO;
+- refinamento não generativo mais sofisticado;
+- refinamento apenas nas imagens que realmente precisam.
+
+---
+
+## Observação sobre direitos e licenças
+
+A arquitetura local reduz dependência de serviços externos, mas não remove obrigações de copyright, licença de modelos ou licença dos assets utilizados.

@@ -32,6 +32,8 @@ class BatchItem(BaseModel):
     duration_ms: Optional[int] = None
     error: Optional[str] = None
     composition: Optional[Dict[str, Any]] = None
+    operation_id: Optional[str] = None
+    export_url: Optional[str] = None
 
 
 class BatchStatus(BaseModel):
@@ -49,3 +51,78 @@ class BatchStatus(BaseModel):
     completed: int
     failed: int
     zip_ready: bool = False
+
+
+class CollectRequest(BaseModel):
+    query: str = Field(..., min_length=1)
+    type: Literal["background", "object", "pose", "face", "outfit", "character", "other"] = "object"
+    concept: Optional[str] = None
+    providers: List[str] = Field(default_factory=lambda: ["openverse", "wikimedia_commons"])
+    per_provider: int = 8
+    save_limit: int = 5
+    auto_approve: bool = False
+
+
+class CollectMissingRequest(BaseModel):
+    prompt: str = Field(..., min_length=1)
+    providers: List[str] = Field(default_factory=lambda: ["openverse", "wikimedia_commons"])
+    per_provider: int = 8
+    save_limit_per_concept: int = 3
+    auto_approve: bool = False
+
+
+class MemoryApproveRequest(BaseModel):
+    approved: bool = True
+
+
+class RefinerBenchmarkRequest(BaseModel):
+    backend: Literal["light_cpu", "sdcpp_img2img"] = "sdcpp_img2img"
+    prompts: Optional[List[str]] = None
+    width: int = 512
+    height: int = 512
+    steps: int = 3
+    strength: float = 0.24
+
+
+class GuidedCollectRequest(BaseModel):
+    guide_text: str = Field(..., min_length=1)
+    providers: List[str] = Field(default_factory=lambda: ["openverse", "wikimedia_commons"])
+    auto_approve: bool = False
+
+
+class GuidedGenerateRequest(BaseModel):
+    prompt: str = ""
+    guide_text: str = Field(..., min_length=1)
+    width: int = 768
+    height: int = 768
+    refiner: Literal["none", "light_cpu", "sdcpp_img2img"] = "none"
+    steps: int = 3
+    strength: float = 0.24
+    collect_missing: bool = False
+    auto_approve_collected: bool = False
+
+
+class MemoryUpdateRequest(BaseModel):
+    status: Optional[Literal["candidates", "approved", "rejected"]] = None
+    tags: Optional[List[str]] = None
+    preferred: Optional[bool] = None
+    blocked: Optional[bool] = None
+    metadata: Optional[Dict[str, Any]] = None
+    type: Optional[str] = None
+    concept: Optional[str] = None
+
+
+class OperationEvaluationRequest(BaseModel):
+    approved: Optional[bool] = None
+    scores: Dict[str, Any] = Field(default_factory=dict)
+    error_type: Optional[str] = None
+    problem: Optional[str] = None
+    severity: Optional[str] = None
+    notes: Optional[str] = None
+
+class OperationReprocessRequest(BaseModel):
+    correction_guide_text: str = Field(..., min_length=1)
+    refiner: Literal["light_cpu", "sdcpp_img2img"] = "light_cpu"
+    steps: int = 3
+    strength: float = 0.24
+
