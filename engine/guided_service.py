@@ -17,6 +17,76 @@ from .reprocessor import regional_reprocessor
 
 
 class GuidedExecutionService:
+    def validate_contract(self, guide: ParsedGuide) -> dict[str, Any]:
+        """Validate execution-critical guide fields without inventing intent.
+
+        The external AI owns planning. The Engine only verifies that a guided MVP
+        contract is explicit enough to execute deterministically. For values that
+        intentionally do not constrain the image, the guide can use `free`.
+        """
+        root = dict(guide.first('CORVO_IMAGE_GUIDE') or {})
+        subject = dict(guide.first('SUBJECT') or {})
+        comp = dict(guide.first('COMPOSITION') or {})
+        output = dict(guide.first('OUTPUT') or {})
+        render = dict(guide.first('RENDER') or {})
+        object_searches = [block for section, block in guide.search_blocks() if section == 'SEARCH_OBJECT']
+        task = str(root.get('task') or '').strip().lower()
+        mode = str(root.get('mode') or '').strip().lower()
+        issues: list[str] = []
+        warnings: list[str] = []
+
+        if mode == 'guided' and not guide.search_blocks():
+            issues.append('nenhum bloco SEARCH_* foi informado')
+
+        if task == 'single_object_quiz':
+            if str(subject.get('type') or '').strip().lower() not in {'object','objeto'}:
+                issues.append('[SUBJECT] type=object')
+            if not subject.get('name'):
+                issues.append('[SUBJECT] name=...')
+            if not object_searches or not object_searches[0].get('query'):
+                issues.append('[SEARCH_OBJECT] query=...')
+
+            orientation = (
+                subject.get('orientation')
+                or (object_searches[0].get('orientation') if object_searches else None)
+                or comp.get('subject_orientation')
+            )
+            desired_view = (
+                subject.get('desired_view') or subject.get('view')
+                or (object_searches[0].get('desired_view') if object_searches else None)
+                or (object_searches[0].get('view') if object_searches else None)
+            )
+            if not orientation:
+                issues.append('orientation=vertical|horizontal|free em [SUBJECT] ou [SEARCH_OBJECT]')
+            if not desired_view:
+                issues.append('desired_view=front|side|3/4|free em [SUBJECT] ou [SEARCH_OBJECT]')
+
+            for field in ('subject_x','subject_y','subject_scale'):
+                if field not in comp:
+                    issues.append(f'[COMPOSITION] {field}=...')
+            if not (output.get('width') and output.get('height')) and not output.get('aspect_ratio'):
+                issues.append('[OUTPUT] width/height ou aspect_ratio')
+            if not render:
+                issues.append('[RENDER] com diretivas de preservação/refino')
+
+            # View is semantic and cannot be reliably inferred by the current non-LLM Engine.
+            # The query should therefore mention the requested view when it is constrained.
+            view_norm = str(desired_view or '').strip().lower()
+            if view_norm not in {'', 'free', 'livre', 'none'} and object_searches:
+                query_text = ' '.join(str(object_searches[0].get(k) or '') for k in ('query','fallback_queries','query_fallbacks')).lower()
+                view_terms = {
+                    'front': ('front','frontal','top view'), 'frontal': ('front','frontal','top view'),
+                    'side': ('side','lateral'), 'lateral': ('side','lateral'),
+                    '3/4': ('3/4','three quarter','three-quarter'),
+                }.get(view_norm, (view_norm,))
+                if not any(term in query_text for term in view_terms):
+                    warnings.append(f'desired_view={desired_view} não aparece nas queries de SEARCH_OBJECT; o Engine não consegue validar perspectiva visual sozinho')
+
+        return {
+            'valid': not issues, 'issues': issues, 'warnings': warnings,
+            'task': task or None, 'mode': mode or None,
+        }
+
     def _filter_config(self, guide: ParsedGuide) -> dict[str, Any]:
         # FILTER remains the explicit source of technical thresholds. A few visual
         # constraints are deterministically projected from the guide so the engine
@@ -488,6 +558,9 @@ class GuidedExecutionService:
                 auto_approve_collected: bool = False, allow_candidates: bool = False,
                 providers: list[str] | None = None, fast_mvp: bool = False) -> dict[str, Any]:
         guide = guide_parser.parse(guide_text)
+        contract = self.validate_contract(guide)
+        if not contract['valid']:
+            raise ValueError('Guia incompleto para execução determinística: ' + '; '.join(contract['issues']))
         width, height, output_request = self._resolve_output_size(guide, width, height)
         providers = list(providers or ['openverse', 'wikimedia_commons'])
         operation_id = operation_manager.create(prompt=prompt, guide_text=guide_text)
@@ -590,7 +663,7 @@ class GuidedExecutionService:
             return {
                 'operation_id': operation_id, 'image': final, 'composition': composition, 'references': copied,
                 'timings': {'collect_ms': collect_ms, 'composer_ms': composer_ms, 'refiner_ms': refine_ms, 'total_ms': total_ms},
-                'refiner': refiner_log, 'guide': guide.as_dict(), 'searches': search_log,
+                'refiner': refiner_log, 'guide': guide.as_dict(), 'searches': search_log, 'guide_contract': contract,
                 'execution': {
                     'allow_candidates': allow_candidates, 'fast_mvp': fast_mvp, 'providers': providers,
                     'reference_overrides': reference_overrides,

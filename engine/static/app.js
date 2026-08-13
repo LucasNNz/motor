@@ -908,7 +908,7 @@ async function exportCurrentSingleOperation() {
     zip.file('logs/execucao.json', JSON.stringify({
       ...(data.execution || {}),
       export_mode: 'browser',
-      export_version: '0.12.9',
+      export_version: '0.12.10',
       final_result_owner: 'browser',
     }, null, 2));
     zip.file('logs/erros.json', JSON.stringify([], null, 2));
@@ -1071,7 +1071,7 @@ async function runBrowserBatch(text) {
   batchSummary.textContent = `LOTE BROWSER · preparando refinador uma única vez para ${items.length} imagem(ns)...`;
   const prepared = await prepareBrowserRefiner();
   const manifest = {
-    version: '0.12.9',
+    version: '0.12.10',
     execution: 'browser_client',
     generated_at: new Date().toISOString(),
     model: browserModel.value || DEFAULT_MODEL,
@@ -1206,7 +1206,21 @@ if (productionGuideFile) {
         ? ' · atenção: busca sem query de fallback'
         : (fallbackLines ? ` · ${fallbackLines} fallback(s) de busca` : '');
       const outputNote = guideOutput ? ` · saída ${guideOutput.width}×${guideOutput.height} pelo guia` : '';
-      productionGuideInfo.textContent = `${file.name} · ${sections} bloco(s) de instrução${fallbackNote}${outputNote} · pronto para executar.`;
+      let contractNote = '';
+      try {
+        const parsed = await api('/api/guide/parse', { method: 'POST', body: JSON.stringify({ guide_text: productionGuideText.value }) });
+        const contract = parsed.contract || {};
+        if (contract.valid === false) {
+          contractNote = ` · GUIA INCOMPLETO: ${(contract.issues || []).join(' | ')}`;
+        } else if ((contract.warnings || []).length) {
+          contractNote = ` · válido com aviso: ${(contract.warnings || []).join(' | ')}`;
+        } else {
+          contractNote = ' · contrato OK';
+        }
+      } catch (validationError) {
+        contractNote = ` · validação indisponível: ${validationError.message}`;
+      }
+      productionGuideInfo.textContent = `${file.name} · ${sections} bloco(s) de instrução${fallbackNote}${outputNote}${contractNote}.`;
     } catch (err) {
       productionGuideInfo.textContent = `Erro ao ler guia: ${err.message}`;
     }
@@ -1465,7 +1479,7 @@ if (singleOperationExportLink) {
 Promise.all([refreshHealth(), refreshComposerStatus(false), refreshMemoryGallery(), refreshRefinerStatus(), refreshBrowserRuntime()]).then(toggleBackendFields);
 setInterval(refreshHealth, 10000);
 
-// V0.12.9 · exportação de operação no navegador · produção guiada
+// V0.12.10 · exportação de operação no navegador · produção guiada
 for (const button of document.querySelectorAll('.nav-btn')) {
   button.addEventListener('click', () => {
     const view = button.dataset.view || 'create';
