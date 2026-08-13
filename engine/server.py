@@ -14,16 +14,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend import build_backend
-from models import BatchItem, BatchStartRequest, BatchStatus, GenerateRequest
-from utils import build_zip, parse_prompt_lines
+try:
+    from .backend import build_backend
+    from .models import BatchItem, BatchStartRequest, BatchStatus, GenerateRequest
+    from .utils import build_zip, parse_prompt_lines
+except ImportError:  # allows `uvicorn server:app` from inside engine/
+    from backend import build_backend
+    from models import BatchItem, BatchStartRequest, BatchStatus, GenerateRequest
+    from utils import build_zip, parse_prompt_lines
 
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
-OUTPUTS_DIR = PROJECT_DIR / "outputs"
+import os
+
+# Vercel Functions have an ephemeral writable /tmp. Local runs keep outputs in the project.
+OUTPUTS_DIR = Path("/tmp/image_motor_outputs") if os.environ.get("VERCEL") else (PROJECT_DIR / "outputs")
 STATIC_DIR = BASE_DIR / "static"
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
-STATIC_DIR.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="Image Motor MVP", version="0.2.0")
 app.add_middleware(

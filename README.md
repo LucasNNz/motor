@@ -154,3 +154,18 @@ A direção escolhida aqui é deliberada:
 - **motor em localhost**
 
 Isso preserva a experiência simples do Forma, mas deixa o processamento pesado fora das limitações do navegador.
+
+## V0.2.1 — correção de deploy no Vercel / Sites
+
+Esta versão inclui o entrypoint explícito exigido pelo build atual do Vercel:
+
+```toml
+[tool.vercel]
+entrypoint = "engine.server:app"
+```
+
+Também transforma `engine/` em pacote Python e deixa os imports compatíveis tanto com Vercel quanto com execução local.
+
+### Observação importante sobre o motor local
+
+O Vercel consegue hospedar a interface/API, mas `127.0.0.1:7860` dentro do Vercel **não é o seu PC**. Para usar Automatic1111 na GPU da sua máquina, o Image Motor deve rodar localmente (ou usar uma ponte/túnel controlado até o motor local). O deploy no Vercel é útil para validar a interface, mas não substitui a execução local do motor.
