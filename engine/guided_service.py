@@ -158,6 +158,32 @@ class GuidedExecutionService:
                     idx = 999
                 numbered.append((idx, str(value).strip()))
         values.extend(v for _, v in sorted(numbered) if v)
+
+        # V0.12.13 compatibility repair. Older guides commonly asked only for
+        # photographic variants such as ``fork isolated front view``. Openverse can
+        # legitimately return tables, hands and tiny thumbnails for those queries,
+        # leaving a perfectly usable icon/illustration route unexplored. For object
+        # searches that require a clean reference, insert a small deterministic clean
+        # asset route before the legacy sequence. The original queries remain as
+        # fallbacks and are still reported in diagnostics.
+        section = str(spec.get('section') or '').upper()
+        combined = ' '.join(values).casefold()
+        clean_terms = (' icon', 'illustration', ' vector', 'transparent', ' png')
+        if section == 'SEARCH_OBJECT' and primary and not any(term in f' {combined}' for term in clean_terms):
+            discard = {
+                'isolated', 'isolate', 'front', 'frontal', 'view', 'top', 'side',
+                'white', 'background', 'studio', 'table', 'silver', 'photo',
+            }
+            core_tokens = [token for token in primary.split() if token.casefold().strip('.,_-') not in discard]
+            core = ' '.join(core_tokens).strip() or str(spec.get('concept') or primary).strip()
+            clean_route = [
+                f'{core} front view icon',
+                f'{core} cutlery front view icon' if core.casefold() in {'fork', 'spoon', 'knife'} else f'{core} object front view icon',
+                f'{core} illustration front view',
+                f'{core} vector front view',
+                f'{core} transparent png',
+            ]
+            values = clean_route + values
         out: list[str] = []
         seen: set[str] = set()
         for value in values:

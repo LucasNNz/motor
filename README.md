@@ -1,4 +1,4 @@
-# Corvo Image Engine V0.12.1 — MVP de Produção Guiada
+# Corvo Image Engine V0.12.13 — MVP de Produção Guiada
 
 A entrada principal agora é **PROMPT + GUIA TXT**. O Engine não tenta substituir a IA que planejou a imagem: ele executa as instruções do guia.
 
@@ -56,3 +56,10 @@ No fluxo principal de produção, `Exportar operação` é montado no navegador.
 - fundos claros de estúdio com pequena variação podem ser removidos deterministicamente pelo Composer;
 - fundos escuros/texturizados continuam rejeitados quando o guia pede fundo claro e baixo ruído;
 - o guia de teste procura primeiro ilustração/PNG e usa foto recortável apenas como fallback.
+
+## V0.12.13 — recuperação de guia antigo
+
+- se um `SEARCH_OBJECT` não traz rota de ícone, ilustração, vetor, transparência ou PNG, o Engine cria essa rota automaticamente;
+- as buscas limpas são tentadas antes das queries fotográficas antigas;
+- as queries originais continuam disponíveis como fallback e aparecem no log;
+- o build pode ser confirmado por `/api/health`: `version=0.12.13` e cabeçalho `X-Corvo-Build: 0.12.13-search-recovery`.

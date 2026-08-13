@@ -36,7 +36,7 @@ class FilterPipeline:
         self.session.mount('https://', HTTPAdapter(max_retries=retry))
         self.session.mount('http://', HTTPAdapter(max_retries=retry))
         self.headers = {
-            'User-Agent': 'CorvoImageEngine/0.12.12 (visual-reference-fetcher)',
+            'User-Agent': 'CorvoImageEngine/0.12.13 (visual-reference-fetcher)',
             'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
         }
 
