@@ -20,6 +20,7 @@ class CollectorService:
         provider_names = providers or self.provider_names()
         results: list[dict[str, Any]] = []
         errors: list[str] = []
+        provider_trace: list[dict[str, Any]] = []
         target_each = per_provider
         if collect_limit:
             target_each = max(per_provider, math.ceil(collect_limit / max(1, len(provider_names))))
@@ -27,14 +28,23 @@ class CollectorService:
             provider = self.providers.get(name)
             if not provider:
                 errors.append(f'provider desconhecido: {name}'); continue
+            provider_started = time.monotonic()
             try:
                 found = provider.search(query, page_size=min(max(1, target_each), 100), options=provider_options or {})
                 results.extend(found)
+                provider_trace.append({
+                    'provider': name, 'status': 'ok', 'found': len(found),
+                    'elapsed_ms': int((time.monotonic() - provider_started) * 1000),
+                })
             except Exception as exc:
                 errors.append(f'{name}: {exc}')
+                provider_trace.append({
+                    'provider': name, 'status': 'error', 'found': 0, 'error': str(exc),
+                    'elapsed_ms': int((time.monotonic() - provider_started) * 1000),
+                })
         if collect_limit:
             results = results[:max(1, int(collect_limit))]
-        return {'query': query, 'providers': provider_names, 'candidates': results, 'errors': errors}
+        return {'query': query, 'providers': provider_names, 'candidates': results, 'errors': errors, 'provider_trace': provider_trace}
 
     def collect(self, *, query: str, type_name: str, concept: Optional[str] = None, providers: Optional[list[str]] = None,
                 per_provider: int = 12, save_limit: int = 5, auto_approve: bool = False,
@@ -138,6 +148,7 @@ class CollectorService:
 
         diagnostics = {
             'provider_errors': list(search['errors']),
+            'provider_trace': list(search.get('provider_trace') or []),
             'candidates_found': len(search['candidates']),
             'kept_after_filter': len(kept),
             'saved_count': len(saved_candidates),
@@ -157,7 +168,7 @@ class CollectorService:
         }
         memory_manager.record_search_history(type_name=type_name, concept=concept, entry=history)
         return {
-            'query': query, 'concept': concept, 'type': type_name, 'providers': search['providers'], 'errors': search['errors'],
+            'query': query, 'concept': concept, 'type': type_name, 'providers': search['providers'], 'errors': search['errors'], 'provider_trace': search.get('provider_trace') or [],
             'filters': cfg, 'candidates_found': len(search['candidates']), 'kept_after_filter': len(kept),
             'rejected_count': len(rejected), 'rejected': rejected[:100], 'saved_count': len(saved_candidates),
             'saved_items': saved_candidates, 'saved_rejected_count': len(saved_rejected), 'search_history_entry': history, 'diagnostics': diagnostics,

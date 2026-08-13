@@ -49,6 +49,36 @@ class GuidedExecutionService:
         return [aliases.get(x.lower(), x.lower()) for x in values] or list(defaults)
 
     @staticmethod
+    def _queries_for_spec(spec: dict[str, Any]) -> list[str]:
+        block = spec.get('block') or {}
+        primary = str(spec.get('query') or '').strip()
+        values: list[str] = [primary] if primary else []
+        raw = block.get('fallback_queries', block.get('query_fallbacks'))
+        if isinstance(raw, str):
+            values.extend(x.strip() for x in raw.split('|') if x.strip())
+        elif isinstance(raw, (list, tuple)):
+            values.extend(str(x).strip() for x in raw if str(x).strip())
+        # Also accept query_fallback_1=..., query_fallback_2=... for TXT generators
+        # that prefer one key per line.
+        numbered = []
+        for key, value in block.items():
+            key_s = str(key).lower()
+            if key_s.startswith('query_fallback_') and value:
+                try:
+                    idx = int(key_s.rsplit('_', 1)[1])
+                except Exception:
+                    idx = 999
+                numbered.append((idx, str(value).strip()))
+        values.extend(v for _, v in sorted(numbered) if v)
+        out: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            key = value.casefold()
+            if value and key not in seen:
+                seen.add(key); out.append(value)
+        return out or [primary]
+
+    @staticmethod
     def _effective_limits(spec: dict[str, Any], *, fast_mvp: bool) -> tuple[int, int]:
         collect_limit = max(1, int(spec.get('collect_limit') or 40))
         keep_limit = max(1, int(spec.get('keep_limit') or 10))
@@ -134,6 +164,18 @@ class GuidedExecutionService:
                     detail += f", processados={diag.get('candidates_processed')}"
                 if diag.get('processing_ms') is not None:
                     detail += f", tempo_coleta_ms={diag.get('processing_ms')}"
+                attempts = diag.get('query_attempts') or []
+                if attempts:
+                    compact = []
+                    for attempt in attempts[:4]:
+                        compact.append(f"{attempt.get('query')!r}:{attempt.get('found', 0)}→{attempt.get('saved', 0)}")
+                    detail += ', tentativas=' + ' | '.join(compact)
+                traces = diag.get('provider_trace') or []
+                if traces:
+                    compact = []
+                    for trace in traces[:4]:
+                        compact.append(f"{trace.get('provider')}:{trace.get('status')}:{trace.get('found', 0)}:{trace.get('elapsed_ms', 0)}ms")
+                    detail += ', providers=' + ' | '.join(compact)
                 detail += ']'
             missing.append(detail)
         if missing:
@@ -234,22 +276,85 @@ class GuidedExecutionService:
             spec_providers = self._providers_for_spec(block, providers)
             collect_limit, keep_limit = self._effective_limits(spec, fast_mvp=fast_mvp)
             per_spec_budget = min(10.0, remaining) if remaining is not None else None
-            result = collector_service.collect(
-                query=spec['query'], type_name=spec['type'], concept=spec['concept'], providers=spec_providers,
-                per_provider=min(12, max(2, collect_limit // max(1, len(spec_providers)))),
-                save_limit=keep_limit, keep_limit=keep_limit, collect_limit=collect_limit,
-                auto_approve=auto_approve, filters=filters, provider_options=block,
-                processing_budget_seconds=per_spec_budget,
-                max_download_attempts=2 if fast_mvp else None,
-                stop_when_kept=fast_mvp,
-                search_metadata={
-                    'section': section, **block, 'providers_effective': spec_providers,
-                    'collect_limit_requested': spec['collect_limit'], 'collect_limit_effective': collect_limit,
-                    'keep_limit_requested': spec['keep_limit'], 'keep_limit_effective': keep_limit,
-                    'fast_mvp': fast_mvp, 'processing_budget_seconds': per_spec_budget,
-                },
-            )
-            results.append({'spec': spec, 'providers': spec_providers, 'effective_collect_limit': collect_limit, 'effective_keep_limit': keep_limit, 'result': result})
+            query_sequence = self._queries_for_spec(spec)
+            query_attempts: list[dict[str, Any]] = []
+            aggregate_trace: list[dict[str, Any]] = []
+            aggregate_errors: list[str] = []
+            aggregate_found = 0
+            aggregate_processed = 0
+            aggregate_kept = 0
+            aggregate_saved = 0
+            aggregate_rejected_reasons: dict[str, int] = {}
+            aggregate_started = time.monotonic()
+            result: dict[str, Any] | None = None
+            for query_index, query_value in enumerate(query_sequence):
+                remaining_spec = None if per_spec_budget is None else max(0.0, per_spec_budget - (time.monotonic() - aggregate_started))
+                if remaining_spec is not None and remaining_spec < 1.0:
+                    break
+                attempt = collector_service.collect(
+                    query=query_value, type_name=spec['type'], concept=spec['concept'], providers=spec_providers,
+                    per_provider=min(12, max(2, collect_limit // max(1, len(spec_providers)))),
+                    save_limit=keep_limit, keep_limit=keep_limit, collect_limit=collect_limit,
+                    auto_approve=auto_approve, filters=filters, provider_options=block,
+                    processing_budget_seconds=remaining_spec,
+                    max_download_attempts=2 if fast_mvp else None,
+                    stop_when_kept=fast_mvp,
+                    search_metadata={
+                        'section': section, **block, 'query_attempt_index': query_index,
+                        'query_original': spec['query'], 'query_effective': query_value,
+                        'providers_effective': spec_providers,
+                        'collect_limit_requested': spec['collect_limit'], 'collect_limit_effective': collect_limit,
+                        'keep_limit_requested': spec['keep_limit'], 'keep_limit_effective': keep_limit,
+                        'fast_mvp': fast_mvp, 'processing_budget_seconds': remaining_spec,
+                    },
+                )
+                result = attempt
+                diag = attempt.get('diagnostics') or {}
+                query_attempts.append({
+                    'query': query_value,
+                    'found': diag.get('candidates_found', 0),
+                    'processed': diag.get('candidates_processed', 0),
+                    'kept': diag.get('kept_after_filter', 0),
+                    'saved': diag.get('saved_count', 0),
+                    'elapsed_ms': diag.get('processing_ms', 0),
+                    'provider_errors': diag.get('provider_errors') or [],
+                })
+                aggregate_trace.extend(diag.get('provider_trace') or [])
+                aggregate_errors.extend(diag.get('provider_errors') or [])
+                aggregate_found += int(diag.get('candidates_found') or 0)
+                aggregate_processed += int(diag.get('candidates_processed') or 0)
+                aggregate_kept += int(diag.get('kept_after_filter') or 0)
+                aggregate_saved += int(diag.get('saved_count') or 0)
+                for reason, count in (diag.get('top_rejection_reasons') or []):
+                    aggregate_rejected_reasons[str(reason)] = aggregate_rejected_reasons.get(str(reason), 0) + int(count)
+                # The guide supplied the fallback order. Stop at the first query
+                # that produces a usable reference for this component.
+                if int(diag.get('saved_count') or 0) > 0:
+                    break
+            if result is None:
+                result = {
+                    'query': spec['query'], 'concept': spec['concept'], 'type': spec['type'], 'saved_count': 0,
+                    'diagnostics': {},
+                }
+            result['query_original'] = spec['query']
+            result['query_attempts'] = query_attempts
+            result['diagnostics'] = {
+                **(result.get('diagnostics') or {}),
+                'candidates_found': aggregate_found,
+                'candidates_processed': aggregate_processed,
+                'kept_after_filter': aggregate_kept,
+                'saved_count': aggregate_saved,
+                'provider_errors': aggregate_errors,
+                'provider_trace': aggregate_trace,
+                'query_attempts': query_attempts,
+                'top_rejection_reasons': sorted(aggregate_rejected_reasons.items(), key=lambda x: x[1], reverse=True)[:8],
+                'processing_ms': int((time.monotonic() - aggregate_started) * 1000),
+            }
+            results.append({
+                'spec': spec, 'providers': spec_providers,
+                'effective_collect_limit': collect_limit, 'effective_keep_limit': keep_limit,
+                'query_sequence': query_sequence, 'result': result,
+            })
         composer_engine.reload_memory()
         return {
             'guide': guide.as_dict(), 'filters': filters, 'results': results,

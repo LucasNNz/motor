@@ -1052,7 +1052,12 @@ if (productionGuideFile) {
       const text = await file.text();
       productionGuideText.value = normalizeBatchText(text);
       const sections = (productionGuideText.value.match(/^\s*\[[^\]]+\]/gm) || []).length;
-      productionGuideInfo.textContent = `${file.name} · ${sections} bloco(s) de instrução · pronto para executar.`;
+      const searchBlocks = (productionGuideText.value.match(/^\s*\[SEARCH_[^\]]+\]/gmi) || []).length;
+      const fallbackLines = (productionGuideText.value.match(/^\s*(fallback_queries|query_fallbacks|query_fallback_\d+)\s*=/gmi) || []).length;
+      const fallbackNote = searchBlocks && !fallbackLines
+        ? ' · atenção: busca sem query de fallback'
+        : (fallbackLines ? ` · ${fallbackLines} fallback(s) de busca` : '');
+      productionGuideInfo.textContent = `${file.name} · ${sections} bloco(s) de instrução${fallbackNote} · pronto para executar.`;
     } catch (err) {
       productionGuideInfo.textContent = `Erro ao ler guia: ${err.message}`;
     }
