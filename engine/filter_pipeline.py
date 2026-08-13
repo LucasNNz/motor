@@ -36,7 +36,7 @@ class FilterPipeline:
         self.session.mount('https://', HTTPAdapter(max_retries=retry))
         self.session.mount('http://', HTTPAdapter(max_retries=retry))
         self.headers = {
-            'User-Agent': 'CorvoImageEngine/0.12.13 (visual-reference-fetcher)',
+            'User-Agent': 'CorvoImageEngine/0.12.14 (visual-reference-fetcher)',
             'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
         }
 
@@ -71,12 +71,38 @@ class FilterPipeline:
         raise RuntimeError(f"nenhum URL da referência pôde ser baixado ({len(urls)} tentativa(s)): {last_error}")
 
     def inspect(self, image_bytes: bytes) -> dict[str, Any]:
-        img = Image.open(io.BytesIO(image_bytes)).convert('RGBA')
+        source_img = Image.open(io.BytesIO(image_bytes))
+        img = source_img.convert('RGBA')
         width, height = img.size
         phash = average_hash(img)
         aspect_ratio = round(width / height, 4) if height else None
         alpha = img.getchannel('A')
-        transparent = alpha.getbbox() is not None and alpha.getextrema()[0] < 255
+        alpha_sample = alpha.resize((96, 96), Image.Resampling.BILINEAR)
+        alpha_hist = alpha_sample.histogram()
+        alpha_total = float(96 * 96)
+        # A PNG can contain an alpha channel without containing a transparent
+        # background. The failing marine-species plate had alpha 114..255 over the
+        # whole rectangle and was therefore incorrectly treated as a perfect cutout.
+        # Only pixels that are actually near-transparent count as transparency.
+        transparent_pixel_ratio = sum(alpha_hist[:33]) / alpha_total
+        alpha_foreground_ratio = sum(alpha_hist[33:]) / alpha_total
+        alpha_mask = alpha_sample.point(lambda v: 255 if v >= 33 else 0)
+        alpha_band = 8
+        alpha_outer_count = 0
+        alpha_outer_area = 0
+        alpha_pixels = alpha_mask.load()
+        for ay in range(96):
+            for ax in range(96):
+                if ax < alpha_band or ax >= 96-alpha_band or ay < alpha_band or ay >= 96-alpha_band:
+                    alpha_outer_area += 1
+                    if alpha_pixels[ax, ay]:
+                        alpha_outer_count += 1
+        alpha_border_foreground_ratio = alpha_outer_count / float(max(1, alpha_outer_area))
+        transparent = bool(
+            transparent_pixel_ratio >= 0.002
+            and 0.01 <= alpha_foreground_ratio <= 0.88
+            and alpha_border_foreground_ratio <= 0.28
+        )
 
         # Cheap deterministic composition metrics. They do not try to understand the
         # picture semantically; they only answer questions the guide can explicitly ask,
@@ -164,6 +190,9 @@ class FilterPipeline:
         return {
             'image': img, 'width': width, 'height': height,
             'aspect_ratio': aspect_ratio, 'transparent': transparent,
+            'transparent_pixel_ratio': round(transparent_pixel_ratio, 4),
+            'alpha_foreground_ratio': round(alpha_foreground_ratio, 4),
+            'alpha_border_foreground_ratio': round(alpha_border_foreground_ratio, 4),
             'perceptual_hash': phash,
             'border_uniformity': round(border_uniformity, 4),
             'border_brightness': round(border_brightness, 4),
@@ -196,7 +225,10 @@ class FilterPipeline:
 
     def relevance_score(self, query: str, title: Optional[str], tags: list[str], concept: Optional[str]) -> float:
         q = normalize_text(query)
-        text_parts = [normalize_text(title or ''), normalize_text(concept or '')] + [normalize_text(t) for t in tags]
+        # ``concept`` is what we hoped to find, not evidence that the candidate
+        # contains it. Including it here rewarded every result even when its title and
+        # tags described a completely different subject.
+        text_parts = [normalize_text(title or '')] + [normalize_text(t) for t in tags]
         score = 0.0
         q_words = set(q.split())
         for part in text_parts:
@@ -233,8 +265,39 @@ class FilterPipeline:
     def metadata_rejection(self, candidate: dict[str, Any], filters: dict[str, Any]) -> Optional[str]:
         text = normalize_text(' '.join([
             str(candidate.get('title') or ''),
+            str(candidate.get('description') or ''),
             ' '.join(str(x) for x in (candidate.get('tags') or [])),
+            str(candidate.get('source_url') or ''),
+            str(candidate.get('image_url') or ''),
         ]))
+        semantic_query = normalize_text(str(filters.get('_semantic_query') or ''))
+        semantic_tokens = set(semantic_query.split())
+        metadata_tokens = set(text.split())
+
+        # Deterministic sense guard for common quiz objects. Search providers may
+        # interpret ambiguous English words in unrelated senses (fork=river branch,
+        # road, software, biological branching). A candidate must expose at least one
+        # identity alias in its own metadata; the query itself is never evidence.
+        identity_aliases = {
+            'fork': {'fork', 'forks', 'cutlery', 'utensil', 'silverware', 'tableware', 'tine', 'tines', 'prong', 'prongs'},
+            'spoon': {'spoon', 'spoons', 'cutlery', 'utensil', 'silverware', 'tableware'},
+            'knife': {'knife', 'knives', 'cutlery', 'utensil', 'silverware', 'tableware'},
+            'banana': {'banana', 'bananas'}, 'apple': {'apple', 'apples'},
+            'book': {'book', 'books'}, 'car': {'car', 'cars', 'automobile', 'vehicle'},
+            'ball': {'ball', 'balls'}, 'box': {'box', 'boxes', 'carton'},
+        }
+        fork_wrong_senses = {
+            'dam', 'river', 'creek', 'stream', 'canyon', 'road', 'trail', 'junction',
+            'township', 'southfork', 'northfork', 'eastfork', 'westfork', 'software',
+            'github', 'repository', 'bicycle', 'bike', 'species', 'marine', 'sponge',
+        }
+        for identity, aliases in identity_aliases.items():
+            if identity not in semantic_tokens:
+                continue
+            if identity == 'fork' and metadata_tokens & fork_wrong_senses:
+                return 'metadados indicam outro sentido de fork, não o talher'
+            if not (metadata_tokens & aliases):
+                return f'metadados sem evidência semântica do objeto {identity}'
         if filters.get('reject_watermarks') and any(k in text for k in ['watermark', 'marca dagua', 'stock watermark']):
             return 'metadados indicam marca-d\'água'
         if filters.get('reject_logos') and any(k in text for k in [' logo ', 'logotipo', 'brand mark']):

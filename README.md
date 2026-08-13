@@ -1,4 +1,4 @@
-# Corvo Image Engine V0.12.13 — MVP de Produção Guiada
+# Corvo Image Engine V0.12.14 — MVP de Produção Guiada
 
 A entrada principal agora é **PROMPT + GUIA TXT**. O Engine não tenta substituir a IA que planejou a imagem: ele executa as instruções do guia.
 
@@ -62,4 +62,12 @@ No fluxo principal de produção, `Exportar operação` é montado no navegador.
 - se um `SEARCH_OBJECT` não traz rota de ícone, ilustração, vetor, transparência ou PNG, o Engine cria essa rota automaticamente;
 - as buscas limpas são tentadas antes das queries fotográficas antigas;
 - as queries originais continuam disponíveis como fallback e aparecem no log;
-- o build pode ser confirmado por `/api/health`: `version=0.12.13` e cabeçalho `X-Corvo-Build: 0.12.13-search-recovery`.
+- o build pode ser confirmado pelo endpoint `/api/health`.
+
+## V0.12.14 — validação semântica e alpha real
+
+- `fork` é desambiguado como talher; resultados de rios, estradas, software e espécies são rejeitados;
+- a referência precisa trazer evidência do objeto no título, descrição, tags ou URL;
+- o conceito esperado não aumenta mais artificialmente a relevância do candidato;
+- PNG com alpha apenas parcial não é mais tratado como objeto perfeitamente transparente;
+- `/api/health` deve responder `version=0.12.14` e `X-Corvo-Build: 0.12.14-semantic-guard`.

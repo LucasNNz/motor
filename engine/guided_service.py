@@ -159,7 +159,7 @@ class GuidedExecutionService:
                 numbered.append((idx, str(value).strip()))
         values.extend(v for _, v in sorted(numbered) if v)
 
-        # V0.12.13 compatibility repair. Older guides commonly asked only for
+        # V0.12.14 compatibility repair. Older guides commonly asked only for
         # photographic variants such as ``fork isolated front view``. Openverse can
         # legitimately return tables, hands and tiny thumbnails for those queries,
         # leaving a perfectly usable icon/illustration route unexplored. For object
@@ -176,13 +176,21 @@ class GuidedExecutionService:
             }
             core_tokens = [token for token in primary.split() if token.casefold().strip('.,_-') not in discard]
             core = ' '.join(core_tokens).strip() or str(spec.get('concept') or primary).strip()
-            clean_route = [
-                f'{core} front view icon',
-                f'{core} cutlery front view icon' if core.casefold() in {'fork', 'spoon', 'knife'} else f'{core} object front view icon',
-                f'{core} illustration front view',
-                f'{core} vector front view',
-                f'{core} transparent png',
-            ]
+            if core.casefold() in {'fork', 'spoon', 'knife'}:
+                clean_route = [
+                    f'{core} cutlery',
+                    f'table {core} utensil',
+                    f'dining {core} silverware',
+                    f'{core} cutlery illustration',
+                    f'{core} utensil isolated',
+                ]
+            else:
+                clean_route = [
+                    f'{core} object front view icon',
+                    f'{core} isolated object illustration',
+                    f'{core} object vector front view',
+                    f'{core} isolated transparent png',
+                ]
             values = clean_route + values
         out: list[str] = []
         seen: set[str] = set()
@@ -405,11 +413,15 @@ class GuidedExecutionService:
                 remaining_spec = None if per_spec_budget is None else max(0.0, per_spec_budget - (time.monotonic() - aggregate_started))
                 if remaining_spec is not None and remaining_spec < 1.0:
                     break
+                attempt_filters = dict(filters)
+                attempt_filters['_semantic_query'] = query_value
+                attempt_filters['_semantic_concept'] = spec['concept']
+                attempt_filters['_semantic_type'] = spec['type']
                 attempt = collector_service.collect(
                     query=query_value, type_name=spec['type'], concept=spec['concept'], providers=spec_providers,
                     per_provider=min(12, max(2, collect_limit // max(1, len(spec_providers)))),
                     save_limit=keep_limit, keep_limit=keep_limit, collect_limit=collect_limit,
-                    auto_approve=auto_approve, filters=filters, provider_options=block,
+                    auto_approve=auto_approve, filters=attempt_filters, provider_options=block,
                     processing_budget_seconds=remaining_spec,
                     max_download_attempts=2 if fast_mvp else None,
                     stop_when_kept=fast_mvp,

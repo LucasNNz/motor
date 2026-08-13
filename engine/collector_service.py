@@ -127,6 +127,9 @@ class CollectorService:
                     'isolation_score': inspection.get('isolation_score'),
                     'cutout_score': inspection.get('cutout_score'),
                     'cutout_compatible': inspection.get('cutout_compatible'),
+                    'transparent_pixel_ratio': inspection.get('transparent_pixel_ratio'),
+                    'alpha_foreground_ratio': inspection.get('alpha_foreground_ratio'),
+                    'alpha_border_foreground_ratio': inspection.get('alpha_border_foreground_ratio'),
                     'foreground_ratio': inspection.get('foreground_ratio'),
                     'border_foreground_ratio': inspection.get('border_foreground_ratio'),
                     'border_uniformity': inspection.get('border_uniformity'),
@@ -200,7 +203,9 @@ class CollectorService:
                 'source_url': x['candidate'].get('source_url'), 'image_url': x['candidate'].get('image_url'),
                 'quality_score': x['quality_score'], 'relevance_score': x['relevance_score'], 'composition_score': x.get('composition_score'), 'combined_score': x['combined_score'],
                 'width': x['inspection']['width'], 'height': x['inspection']['height'],
-                'isolation_score': x['inspection'].get('isolation_score'), 'cutout_score': x['inspection'].get('cutout_score'), 'cutout_compatible': x['inspection'].get('cutout_compatible'), 'border_uniformity': x['inspection'].get('border_uniformity'),
+                'isolation_score': x['inspection'].get('isolation_score'), 'cutout_score': x['inspection'].get('cutout_score'), 'cutout_compatible': x['inspection'].get('cutout_compatible'),
+                'transparent_pixel_ratio': x['inspection'].get('transparent_pixel_ratio'), 'alpha_foreground_ratio': x['inspection'].get('alpha_foreground_ratio'),
+                'alpha_border_foreground_ratio': x['inspection'].get('alpha_border_foreground_ratio'), 'border_uniformity': x['inspection'].get('border_uniformity'),
             } for x in kept[:20]],
         }
 
